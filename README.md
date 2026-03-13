@@ -35,7 +35,7 @@ Make sure the current directory is the one containing this README.
 
 ### Claim 1
 
-Proposed metric rAP shows that AES-CLMUL parallelism is available on several processors, including those whose microarchtecure is Sapphire Rapids (Intel), Zen4 (AMD), or Neovese V2 (ARM).
+Proposed metric rAP shows that AES-CLMUL parallelism is available on several processors, including those whose microarchtecure is Sapphire Rapids (Intel).
 
 #### Evidence
 This claim refers to the first contribution (Instruction-Level Parallelism between the AES and
