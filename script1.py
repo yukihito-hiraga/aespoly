@@ -1,6 +1,7 @@
 from scripthelper import *
 
 def main():
+	print("Results for claim1 (only the row for this machine is shown)\n")
 	table4()
 	print()
 	table5()
