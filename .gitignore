@@ -1,0 +1,13 @@
+# setting
+.vscode
+
+# build
+build/
+
+# result files
+result
+
+# python files
+**/__pycache__
+**/.venv/
+**/venv/

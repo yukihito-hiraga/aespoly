@@ -1,0 +1,25 @@
+# benchset: list of benchmark configurations
+# each entry : [ start_size, n ]
+# for the i-th measurement (i=1...n), input size is i * start_size
+benchset:
+  #- [100, 100]
+  - [2048, 80]
+# if avx512 is not supported, avx512-related targets are ignored
+targets:
+  - "hctr2-avx512"
+  - "aespoly-avx512"
+  - "eme-avx512"
+  - "aesgcm"
+  - "ocb"
+  - "hctr2-aes128"
+  - "aespoly-aes128"
+  - "aespoly-simpira"
+  - "aespoly-rijndael256"
+  - "hctr2-simpira"
+  - "hctr2-rijndael256"
+  - "pmac-avx"
+  - "gmac-avx"
+  - "ecbpoly"
+  - "eme-aes128"
+  - "eme-rijndael256"
+  - "eme-simpira"
