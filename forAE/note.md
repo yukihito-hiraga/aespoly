@@ -15,3 +15,12 @@ TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metad
 ```
 
 The output should contain ``"instanceType" : "r6i.xlarge"`` which means the instance uses the Ice Lake microarchitecture.
+
+## Before logging out
+
+Since other evaluators may use the same machine, please remove ``aespoly`` folder you downloaded before logging out.
+```
+$ deactivate
+$ cd ~
+$ rm -rf aespoly
+```
