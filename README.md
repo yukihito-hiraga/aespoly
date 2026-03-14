@@ -30,6 +30,8 @@ Make sure the current directory is the one containing this README.
 
 - run `sudo --preserve-env=PATH ./bench.sh`
 	- make sure in venv
+	- this takes about 10 minutes
+
 
 ## Claims
 
