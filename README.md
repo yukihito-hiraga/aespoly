@@ -68,7 +68,7 @@ These values should be similar to the ones on  Intel-IL’s row in the correspon
 On Intel processors, our schemes outperform other schemes except for HCTR2 instantiated with Rijndael-256.
 
 #### Evidence
-This claim refers to the first contribution (Performance Evaluation) in Section 1.1 of the paper.
+This claim refers to the third contribution (Performance Evaluation) in Section 1.1 of the paper.
 The relevant tables in the paper are Table 7, Table 9, Table 10, and Table 11.
 
 #### Script
