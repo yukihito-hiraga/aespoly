@@ -69,7 +69,7 @@ On Intel processors, our schemes outperform other schemes except for HCTR2 insta
 
 #### Evidence
 This claim refers to the third contribution (Performance Evaluation) in Section 1.1 of the paper.
-The relevant tables in the paper are Table 7, Table 9, Table 10, and Table 11.
+The relevant tables in the paper are Table 7, 9, 10, and 11.
 
 #### Script
 
