@@ -73,8 +73,9 @@ The relevant tables in the paper are Table 7, Table 9, Table 10, and Table 11.
 
 #### Script
 
-Use `script2-x64.py` for Intel or AMD, and `script2-arm.py` for ARM.
-The script outputs results corresponding to this machine's row of each table (7, 9, 10, and 11).
+Use `script2-x64.py` for Intel/AMD machines, and `script2-arm.py` for ARM machines.
+`script2.py` is the same as `script2-x64.py` for Intel/AMD machines.
+The script outputs results corresponding to the row corresponding to this machine's row of each table (7, 9, 10, and 11).
 
 #### Expected result
 
