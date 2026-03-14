@@ -11,6 +11,7 @@
 #include <sched.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -477,6 +478,7 @@ void measure_save(GArray *targets, measurement_option option, size_t num_base, s
         snprintf(name, 120, "result/%s.csv", g_array_index(targets, measurement_target, k).name);
         FILE *fp;
         fp = fopen(name, "w");
+		chmod(name, 0666);
         if (fp != NULL)
         {
             for (size_t i = 1; i <= num_itr; i++)

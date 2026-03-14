@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import csv
 from pathlib import Path
 from sys import argv
+import os
 
 matplotlib.use('Agg')
 
@@ -35,6 +36,7 @@ def save(path : Path, name : str):
 	ax_avg.set_ylabel("cpb")
 	ax_avg.set_ylim(bottom=0)
 	fig_avg.savefig(path / (name + "avg-cpb.png"))
+	os.chmod(path / (name + "avg-cpb.png"), 0o777)
 
 	fig_min.legend()
 	ax_min.set_title("Min cpb")
@@ -42,6 +44,7 @@ def save(path : Path, name : str):
 	ax_min.set_ylabel("cpb")
 	ax_min.set_ylim(bottom=0)
 	fig_min.savefig(path / (name + "min-cpb.png"))
+	os.chmod(path / (name + "min-cpb.png"), 0o777)
 
 def main():
 	path = Path("./result")

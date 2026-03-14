@@ -68,7 +68,7 @@ def main():
 	run(["rm -rf result/*"], shell=True)
 	for s, t in data["benchset"]:
 		foldername = "result-{}-{}".format(s, t)
-		run(["mkdir",  "-p",  Path("result") / foldername])
+		run(["mkdir", "-m", "777",  "-p",  Path("result") / foldername])
 		for target in targets:
 			if "avx512" in target and not avx512:
 				continue

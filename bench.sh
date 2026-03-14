@@ -15,7 +15,7 @@ else
 		echo "1" | sudo tee "$path_turbo"
 	fi
 
-	mkdir -p result
+	mkdir -m 777 -p result
 
 	python tool/bench.py
 

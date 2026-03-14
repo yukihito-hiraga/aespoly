@@ -59,7 +59,7 @@ def main():
     run(["rm -rf result/*"], shell=True)
     for s, t in data["benchset"]:
         foldername = "result-{}-{}".format(s, t)
-        run(["mkdir",  "-p",  Path("result") / foldername])
+        run(["mkdir", "-m", "777",  "-p",  Path("result") / foldername])
         for target in targets:
             cpuinfo = get_cpuinfo()
             lfreq = np.array([ obj["cpuMHz"] for obj in cpuinfo ])
