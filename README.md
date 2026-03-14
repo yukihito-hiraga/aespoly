@@ -35,12 +35,12 @@ Make sure the current directory is the one containing this README.
 
 ### Claim 1
 
-Proposed metric rAP shows that AES-CLMUL parallelism is available on several processors, including those whose microarchtecure is IceLake (Intel).
+Proposed metric rAP shows that AES-CLMUL parallelism is available on several processors, including the provided EC2 instance that runs on Intel Ice Lake microarchitecture.
 
-#### Evidence
+#### Relevance to the paper
 This claim refers to the first contribution (Instruction-Level Parallelism between the AES and
 CLMUL Instructions) in Section 1.1 of the paper.
-The relevant tables in the paper are Table 4, Table 5, Table 6, Table 9, and Table 10.
+The relevant tables in the paper are Table 4, 5, 6, 9, and 10.
 
 #### Script
 
@@ -48,15 +48,22 @@ The relevant tables in the paper are Table 4, Table 5, Table 6, Table 9, and Tab
 
 #### Expected result
 
-All values are expected to be close to the corresponding values appeared in the paper.
-For instance, all rAP are expected to be less than 1, and AES-OCB/AES-GCM is expected to be less than 100%.
-
-You can verify the correctness of the values of rAP by compute rAP as CAP/(CA + CP) using CA, CP, and CAP values also reported by this script.
+The script shows the performance results on the console. 
+The result consists of multiple parts corresponding to Table 4, 5, 6, 9, and 10.
+The console output is self-explanatory and includes the lines as described below. 
+```
+Result for Table 4
+CA: 0.323
+CP: 0.275
+CAP: 0.52
+rAP: 0.87
+```
+These values should be similar to the ones on  Intel-IL’s row in the corresponding tables.
 
 
 ### Claim 2
 
-Our proposed schemes AESpolyW and AESpolyM take advantage of AES-CLMUL parallelism to achieve better performance than prior schemes.
+On Intel processors, our schemes outperform other schemes except for HCTR2 instantiated with Rijndael-256.
 
 #### Evidence
 This claim refers to the first contribution (Performance Evaluation) in Section 1.1 of the paper.
@@ -65,13 +72,14 @@ The relevant tables in the paper are Table 7, Table 9, Table 10, and Table 11.
 #### Script
 
 Use `script2-x64.py` for Intel or AMD, and `script2-arm.py` for ARM.
-The script outputs results corresponding to this machine's row of each table (7, 9, 10, 11) described above.
+The script outputs results corresponding to this machine's row of each table (7, 9, 10, and 11).
 
 #### Expected result
 
-All values are expected to be close to the corresponding value appeared in the paper.
-Although the cpb of our scheme is larger than that of another scheme on some processor (such as AESpolyM on AMD processors), our shemes usually outperform the other schemes overall.
+The script prints the performance results in the same format as the script for claim1.
+The results vary for each run but are expected to reproduce values similar to the ones indicated by Intel-IL in Tables 7, 9, 10, and 11. 
 
+---
 
 ### Format of the raw results
 
