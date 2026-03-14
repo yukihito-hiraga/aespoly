@@ -2,7 +2,7 @@
 
 On Intel processors, our schemes outperform other schemes except for HCTR2 instantiated with Rijndael-256.
 
-## Evidence
+## Relevance to the paper
 This claim refers to the third contribution (Performance Evaluation) in Section 1.1 of the paper.
 The relevant tables in the paper are Table 7, 9, 10, and 11.
 
