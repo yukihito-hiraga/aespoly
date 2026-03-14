@@ -1,3 +1,5 @@
+# Please read the README.md in the repository before running this script
+
 from scripthelper import *
 
 def main():
