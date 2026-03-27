@@ -101,12 +101,12 @@ static inline void _mm_store_si128(__m128i *p, __m128i x)
 
 #define _mm_srli_epi32(x, imm)                                            \
 	__extension__({                                                       \
-		vreinterpretq_u8_u32(vrshrq_n_u32(vreinterpretq_u32_u8(x), imm)); \
+		vreinterpretq_u8_u32(vshrq_n_u32(vreinterpretq_u32_u8(x), imm)); \
 	})
 
 #define _mm_srli_epi64(x, imm)                                            \
 	__extension__({                                                       \
-		vreinterpretq_u8_u64(vrshrq_n_u64(vreinterpretq_u64_u8(x), imm)); \
+		vreinterpretq_u8_u64(vshrq_n_u64(vreinterpretq_u64_u8(x), imm)); \
 	})
 
 #define _mm_slli_epi64(x, imm)                                            \
