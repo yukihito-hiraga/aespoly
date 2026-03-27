@@ -145,14 +145,14 @@ static inline __m128i pmac128x8(aes_context aesctx, pmac_context ctx, const uint
 	for (size_t i = 0; i < bx8len; i++)
 	{
 		seq_graycode_x8(offset, ctx.L, ctx.L[1], Li, i);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 0);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 1);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 2);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 3);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 4 + 0);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 4 + 1);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 4 + 2);
-		pmac_round((__m128i *)M + i * 4, aesctx, ctx, offset, data, tmps, sum, 4 + 3);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 0);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 1);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 2);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 3);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 4 + 0);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 4 + 1);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 4 + 2);
+		pmac_round((__m128i *)M + i * 8, aesctx, ctx, offset, data, tmps, sum, 4 + 3);
 	}
 
 	for (size_t i = 0; i < bx8rem; i++)
