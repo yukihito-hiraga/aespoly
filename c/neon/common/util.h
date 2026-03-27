@@ -41,7 +41,7 @@ void clflush_bytearray(bytearray b)
 
 void free_bytearray(bytearray b)
 {
-	if (b.head == NULL)
+	if (b.head != NULL)
 		free(b.head);
 	b.head = NULL;
 }
