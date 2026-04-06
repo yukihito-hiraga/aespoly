@@ -65,11 +65,11 @@ inline __m128i polyval128x4(hctr2_context ctx, __m128i state, uint8_t *blks, siz
 		Z = _mm_xor_si128(X, Y);
 		Z = _mm_xor_si128(Z, data[0]);
 
-		schoolbook_initialadd128(data[3], ctx.htbl[0], tmps);
+		schoolbook_initialadd128(data[3], ctx.htbl[1], tmps);
 
-		schoolbook_add128(data[2], ctx.htbl[1], tmps);
-		schoolbook_add128(data[1], ctx.htbl[2], tmps);
-		schoolbook_add128(Z, ctx.htbl[3], tmps);
+		schoolbook_add128(data[2], ctx.htbl[2], tmps);
+		schoolbook_add128(data[1], ctx.htbl[3], tmps);
+		schoolbook_add128(Z, ctx.htbl[4], tmps);
 
 		tmps[3] = _mm_bsrli_si128(tmps[2], 8);
 		tmps[2] = _mm_bslli_si128(tmps[2], 8);
@@ -84,7 +84,7 @@ inline __m128i polyval128x4(hctr2_context ctx, __m128i state, uint8_t *blks, siz
 	{
 		data[0] = _mm_loadu_si128((__m128i*)blks + loopnum - remainder + i);
 		X = _mm_xor_si128(X, data[0]);
-		X = polydot128(ctx, X, ctx.htbl[0]);
+		X = polydot128(ctx, X, ctx.htbl[1]);
 	}
 	return X;
 }
@@ -108,14 +108,14 @@ static inline __m128i polyval128x8(hctr2_context ctx, __m128i state, uint8_t *P,
 		Z = _mm_xor_si128(X, Y);
 		Z = _mm_xor_si128(Z, data[0]);
 
-		schoolbook_initialadd128(data[7], ctx.htbl[0], tmps);
-		schoolbook_add128(data[6], ctx.htbl[1], tmps);
-		schoolbook_add128(data[5], ctx.htbl[2], tmps);
-		schoolbook_add128(data[4], ctx.htbl[3], tmps);
-		schoolbook_add128(data[3], ctx.htbl[4], tmps);
-		schoolbook_add128(data[2], ctx.htbl[5], tmps);
-		schoolbook_add128(data[1], ctx.htbl[6], tmps);
-		schoolbook_add128(Z, ctx.htbl[7], tmps);
+		schoolbook_initialadd128(data[7], ctx.htbl[1], tmps);
+		schoolbook_add128(data[6], ctx.htbl[2], tmps);
+		schoolbook_add128(data[5], ctx.htbl[3], tmps);
+		schoolbook_add128(data[4], ctx.htbl[4], tmps);
+		schoolbook_add128(data[3], ctx.htbl[5], tmps);
+		schoolbook_add128(data[2], ctx.htbl[6], tmps);
+		schoolbook_add128(data[1], ctx.htbl[7], tmps);
+		schoolbook_add128(Z, ctx.htbl[8], tmps);
 
 		tmps[3] = _mm_bsrli_si128(tmps[2], 8);
 		tmps[2] = _mm_bslli_si128(tmps[2], 8);
@@ -130,7 +130,7 @@ static inline __m128i polyval128x8(hctr2_context ctx, __m128i state, uint8_t *P,
 	{
 		data[0] = _mm_loadu_si128((__m128i *)P + loopnum - remainder + i);
 		X = _mm_xor_si128(X, data[0]);
-		X = polydot128(ctx, X, ctx.htbl[0]);
+		X = polydot128(ctx, X, ctx.htbl[1]);
 	}
 	return X;
 }

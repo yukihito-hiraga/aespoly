@@ -122,7 +122,7 @@ int main(int argc, char **argv)
 
     measurement_target target_polyvalx4 = make_target("polyvalx4", wrapper_hashx4);
     measurement_target target_polyvalx8 = make_target("polyvalx8", wrapper_hashx8);
-    // measurement_target target_xctr = make_target("xctr", wrapper_xctr);
+    measurement_target target_xctr = make_target("xctr", wrapper_xctr);
     measurement_target target_xctr_polyvalx4 = make_target("xctr‖polyvalx4", wrapper_xctrhashx4);
     measurement_target target_xctr_polyvalx8 = make_target("xctr‖polyvalx8", wrapper_xctrhashx8);
     measurement_target target_hctr2x4 = make_target("hctr2x4", wrapper_hctr2p_x4);
@@ -130,6 +130,7 @@ int main(int argc, char **argv)
 
     g_array_append_val(targets, target_polyvalx4);
     g_array_append_val(targets, target_polyvalx8);
+    g_array_append_val(targets, target_xctr);
     g_array_append_val(targets, target_xctr_polyvalx4);
     g_array_append_val(targets, target_xctr_polyvalx8);
     g_array_append_val(targets, target_hctr2x4);

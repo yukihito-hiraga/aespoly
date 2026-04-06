@@ -61,7 +61,7 @@ def table7(x=8):
 	print(f"Result for Table 7")
 	HCTR2 = ext_value(f"hctr2-aes128.hctr2x{x}.csv")
 	EME = ext_value(f"eme-aes128.emex{x}.csv")
-	AESpolyW = ext_value(f"aespoly-aes128.aespolyx{x}.csv")
+	AESpolyW = ext_value(f"aespolyW-aes128.aespolyWx{x}.csv")
 	if None in [HCTR2, EME, AESpolyW]:
 		print("Not supported this experiment on this machine.")
 		return
@@ -93,7 +93,7 @@ def table9_schemes(x=8):
 	print(f"Result for Table 9 (performance of schemes)")
 	HCTR2 = ext_value(f"hctr2-rijndael256.hctr2x{x}.csv")
 	EME = ext_value(f"eme-rijndael256.emex{x}.csv")
-	AESpolyW = ext_value(f"aespoly-rijndael256.aespolyx{x}.csv")
+	AESpolyW = ext_value(f"aespolyW-rijndael256.aespolyWx{x}.csv")
 	if None in [HCTR2, EME, AESpolyW]:
 		print("Not supported this experiment on this machine.")
 		return
@@ -125,7 +125,7 @@ def table10_schemes(x=8):
 	print(f"Result for Table 10 (performance of schemes)")
 	HCTR2 = ext_value(f"hctr2-simpira.hctr2x{x}.csv")
 	EME = ext_value(f"eme-simpira.emex{x}.csv")
-	AESpolyW = ext_value(f"aespoly-simpira.aespolyx{x}.csv")
+	AESpolyW = ext_value(f"aespolyW-simpira.aespolyWx{x}.csv")
 	if None in [HCTR2, EME, AESpolyW]:
 		print("Not supported this experiment on this machine.")
 		return
@@ -142,7 +142,7 @@ def table11(x=8):
 	print(f"Result for Table 11")
 	GMAC = ext_value(f"gmac-avx.gmacx{x}.csv")
 	PMAC = ext_value(f"pmac-avx.pmacx{x}.csv")
-	AESpolyM = ext_value(f"ecbpoly.ecbpolyx{x}.csv")
+	AESpolyM = ext_value(f"aespolyM.aespolyMx{x}.csv")
 	if None in [GMAC, PMAC, AESpolyM]:
 		print("Not supported this experiment on this machine.")
 		return

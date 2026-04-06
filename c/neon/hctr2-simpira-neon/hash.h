@@ -43,15 +43,15 @@ static inline void polyval128n2(hctr2_context ctx, __m128i *state, uint8_t *blks
 		data[0] = _mm_loadu_si128((__m128i*)blks + i);
 		X[0] = _mm_xor_si128(X[0], data[0]);
 		X[1] = _mm_xor_si128(X[1], data[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[4]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 	}
 
 	hash[0] = X[0];
 	hash[1] = X[1];
 }
 
-static inline __m128i polyval128n2x4(hctr2_context ctx, __m128i *state, uint8_t *blks, size_t blen, __m128i *hash)
+static inline void polyval128n2x4(hctr2_context ctx, __m128i *state, uint8_t *blks, size_t blen, __m128i *hash)
 {
 
 	alignas(16) __m128i tmps[12];
@@ -76,17 +76,17 @@ static inline __m128i polyval128n2x4(hctr2_context ctx, __m128i *state, uint8_t 
 		Z[0] = _mm_xor_si128(Z[0], data[0]);
 		Z[1] = _mm_xor_si128(Z[1], data[0]);
 
-		schoolbook_initialadd128(data[3], ctx.htbl[0], tmps);
-		schoolbook_initialadd128(data[3], ctx.htbl[4], tmps+4);
+		schoolbook_initialadd128(data[3], ctx.htbl[1], tmps);
+		schoolbook_initialadd128(data[3], ctx.htbl[17], tmps+4);
 
-		schoolbook_add128(data[2], ctx.htbl[1], tmps);
-		schoolbook_add128(data[2], ctx.htbl[5], tmps+4);
+		schoolbook_add128(data[2], ctx.htbl[2], tmps);
+		schoolbook_add128(data[2], ctx.htbl[18], tmps+4);
 
-		schoolbook_add128(data[1], ctx.htbl[2], tmps);
-		schoolbook_add128(data[1], ctx.htbl[6], tmps+4);
+		schoolbook_add128(data[1], ctx.htbl[3], tmps);
+		schoolbook_add128(data[1], ctx.htbl[19], tmps+4);
 
-		schoolbook_add128(Z[0], ctx.htbl[3], tmps);
-		schoolbook_add128(Z[1], ctx.htbl[7], tmps+4);
+		schoolbook_add128(Z[0], ctx.htbl[4], tmps);
+		schoolbook_add128(Z[1], ctx.htbl[20], tmps+4);
 
 		tmps[3] = _mm_bsrli_si128(tmps[2], 8);
 		tmps[2] = _mm_bslli_si128(tmps[2], 8);
@@ -112,8 +112,8 @@ static inline __m128i polyval128n2x4(hctr2_context ctx, __m128i *state, uint8_t 
 		data[0] = _mm_loadu_si128((__m128i*)blks + dx4len * 4 + i);
 		X[0] = _mm_xor_si128(X[0], data[0]);
 		X[1] = _mm_xor_si128(X[1], data[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[4]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 	}
 	hash[0] = X[0];
 	hash[1] = X[1];
@@ -129,6 +129,13 @@ static inline void polyval128n2x8(hctr2_context ctx, __m128i* state, uint8_t *P,
 	alignas(16) __m128i Y[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
 	alignas(16) __m128i Z[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
 	alignas(16) __m128i data[4];
+	alignas(16) __m128i htbl8[16];
+
+	for (size_t i = 0; i < 8; i++)
+	{
+			htbl8[i] = ctx.htbl[i + 1];
+			htbl8[i + 8] = ctx.htbl[i + 17];
+	}
 
 	size_t loopnum = (Plen - remainder) / 16;
 	for (size_t i = 0; i < (loopnum / 8); i++)
@@ -143,16 +150,16 @@ static inline void polyval128n2x8(hctr2_context ctx, __m128i* state, uint8_t *P,
 		Z[0] = _mm_xor_si128(Z[0], data[0]);
 		Z[1] = _mm_xor_si128(Z[1], data[0]);
 
-		mulinit_n2(data, ctx.htbl, tmps, 8);
+		mulinit_n2(data, htbl8, tmps, 8);
 
-		muladd_n2(data, ctx.htbl, tmps, 8, 1);
-		muladd_n2(data, ctx.htbl, tmps, 8, 2);
-		muladd_n2(data, ctx.htbl, tmps, 8, 3);
-		muladd_n2(data, ctx.htbl, tmps, 8, 4);
-		muladd_n2(data, ctx.htbl, tmps, 8, 5);
-		muladd_n2(data, ctx.htbl, tmps, 8, 6);
+		muladd_n2(data, htbl8, tmps, 8, 1);
+		muladd_n2(data, htbl8, tmps, 8, 2);
+		muladd_n2(data, htbl8, tmps, 8, 3);
+		muladd_n2(data, htbl8, tmps, 8, 4);
+		muladd_n2(data, htbl8, tmps, 8, 5);
+		muladd_n2(data, htbl8, tmps, 8, 6);
 
-		muladdlast_n2(Z, ctx.htbl, tmps, 8);
+		muladdlast_n2(Z, htbl8, tmps, 8);
 
 		tmps[3] = _mm_bsrli_si128(tmps[2], 8);
 		tmps[2] = _mm_bslli_si128(tmps[2], 8);
@@ -179,10 +186,10 @@ static inline void polyval128n2x8(hctr2_context ctx, __m128i* state, uint8_t *P,
 		data[0] = _mm_loadu_si128((__m128i *)P + loopnum - (loopnum % 8) + i);
 
 		X[0] = _mm_xor_si128(X[0], data[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 
 		X[1] = _mm_xor_si128(X[1], data[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[4]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 	}
 
 	hash[0] = X[0];
@@ -192,12 +199,10 @@ static inline void polyval128n2x8(hctr2_context ctx, __m128i* state, uint8_t *P,
 static inline void tweakhash128n2x4(hctr2_context ctx, bool mln, uint8_t *T, size_t Tlen, __m128i *state)
 {
 	size_t len = 2 * 8 * Tlen + 2 + mln;
-	alignas(16) __m128i firstblk[2] = {
-		_mm_setr_epi64(_mm_set_pi64x(len), _mm_setzero_si64()),
-		_mm_setr_epi64(_mm_set_pi64x(len), _mm_setzero_si64())};
-	alignas(16) __m128i X[2] = {
-		polydot128(ctx.poly, ctx.htbl[0], firstblk[0]),
-		polydot128(ctx.poly, ctx.htbl[4], firstblk[1])};
+	alignas(16) __m128i X[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) uint8_t first[32] = {};
+        memcpy(first, &len, sizeof(len));
+	polyval128n2(ctx, X, first, 32, X);
 
 	size_t Trem = Tlen % 32;
 
@@ -207,18 +212,9 @@ static inline void tweakhash128n2x4(hctr2_context ctx, bool mln, uint8_t *T, siz
 	}
 	if (Trem > 0)
 	{
-		uint8_t padded[32];
-		alignas(16) __m128i paddedblk[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
-
-		memset(padded, 0, 32);
-		memcpy(padded, T + Tlen - Trem, Trem);
-		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
-		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
-
-		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
-		X[0] = polydot128(ctx.poly, ctx.htbl[0], X[0]);
-		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
-		X[1] = polydot128(ctx.poly, ctx.htbl[4], X[1]);
+		uint8_t padded[32] = {};
+                memcpy(padded, T + Tlen - Trem, Trem);
+		polyval128n2(ctx, X, padded, 32, X);
 	}
 
 	state[0] = X[0];
@@ -228,12 +224,10 @@ static inline void tweakhash128n2x4(hctr2_context ctx, bool mln, uint8_t *T, siz
 static inline void tweakhash128n2x8(hctr2_context ctx, bool mln, uint8_t *T, size_t Tlen, __m128i *state)
 {
 	size_t len = 2 * 8 * Tlen + 2 + mln;
-	alignas(16) __m128i firstblk[2] = {
-		_mm_setr_epi64(_mm_set_pi64x(len), _mm_setzero_si64()),
-		_mm_setr_epi64(_mm_set_pi64x(len), _mm_setzero_si64())};
-	alignas(16) __m128i X[2] = {
-		polydot128(ctx.poly, ctx.htbl[0], firstblk[0]),
-		polydot128(ctx.poly, ctx.htbl[4], firstblk[1])};
+	alignas(16) __m128i X[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) uint8_t first[32] = {};
+        memcpy(first, &len, sizeof(len));
+	polyval128n2(ctx, X, first, 32, X);
 
 	size_t Trem = Tlen % 32;
 
@@ -243,78 +237,51 @@ static inline void tweakhash128n2x8(hctr2_context ctx, bool mln, uint8_t *T, siz
 	}
 	if (Trem > 0)
 	{
-		uint8_t padded[32];
-		alignas(16) __m128i paddedblk[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
-
-		memset(padded, 0, 32);
-		memcpy(padded, T + Tlen - Trem, Trem);
-		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
-		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
-
-		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
-		X[0] = polydot128(ctx.poly, ctx.htbl[0], X[0]);
-		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
-		X[1] = polydot128(ctx.poly, ctx.htbl[4], X[1]);
+		uint8_t padded[32] = {};
+                memcpy(padded, T + Tlen - Trem, Trem);
+		polyval128n2(ctx, X, padded, 32, X);
 	}
 
 	state[0] = X[0];
 	state[1] = X[1];
 }
 
-static inline __m128i hash128x4(hctr2_context ctx, __m128i* state, uint8_t *M, size_t Mlen, __m128i* hash)
+static inline void hash128x4(hctr2_context ctx, __m128i* state, uint8_t *M, size_t Mlen, __m128i* hash)
 {
-	alignas(16) __m128i X[2];
+	alignas(16) __m128i X[2] = {state[0], state[1]};
 	size_t Mrem = Mlen % 32;
 	if (Mlen >= 32)
 	{
-		polyval128n2x4(ctx, state, M, Mlen, X);
+		polyval128n2x4(ctx, state, M, Mlen - Mrem, X);
 	}
 
 	if (Mrem > 0)
 	{
-		uint8_t padded[32];
-		alignas(16) __m128i paddedblk[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
-
-		memset(padded, 0, 32);
-		memcpy(padded, M + Mlen - Mrem, Mrem);
+		uint8_t padded[32] = {};
+                memcpy(padded, M + Mlen - Mrem, Mrem);
 		padded[Mrem] = 0x01;
-		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
-		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
-
-		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
-		X[0] = polydot128(ctx.poly, ctx.htbl[0], X[0]);
-		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
-		X[1] = polydot128(ctx.poly, ctx.htbl[4], X[1]);
+		polyval128n2(ctx, X, padded, 32, X);
 	}
 
 	hash[0] = X[0];
 	hash[1] = X[1];
 }
 
-static inline __m128i hash128x8(hctr2_context ctx, __m128i* state, uint8_t *M, size_t Mlen, __m128i* hash)
+static inline void hash128x8(hctr2_context ctx, __m128i* state, uint8_t *M, size_t Mlen, __m128i* hash)
 {
-	alignas(16) __m128i X[2];
+	alignas(16) __m128i X[2] = {state[0], state[1]};
 	size_t Mrem = Mlen % 32;
 	if (Mlen >= 32)
 	{
-		polyval128n2x8(ctx, state, M, Mlen, X);
+		polyval128n2x8(ctx, state, M, Mlen - Mrem, X);
 	}
 
 	if (Mrem > 0)
 	{
-		uint8_t padded[32];
-		alignas(16) __m128i paddedblk[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
-
-		memset(padded, 0, 32);
-		memcpy(padded, M + Mlen - Mrem, Mrem);
+		uint8_t padded[32] = {};
+                memcpy(padded, M + Mlen - Mrem, Mrem);
 		padded[Mrem] = 0x01;
-		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
-		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
-
-		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
-		X[0] = polydot128(ctx.poly, ctx.htbl[0], X[0]);
-		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
-		X[1] = polydot128(ctx.poly, ctx.htbl[4], X[1]);
+		polyval128n2(ctx, X, padded, 32, X);
 	}
 
 	hash[0] = X[0];

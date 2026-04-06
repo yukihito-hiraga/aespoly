@@ -96,7 +96,7 @@ static inline void _mm_store_si128(__m128i *p, __m128i x)
 
 #define _mm_slli_epi32(x, imm)                                            \
 	__extension__({                                                       \
-		vreinterpretq_u8_u32(vqshlq_n_u32(vreinterpretq_u32_u8(x), imm)); \
+		vreinterpretq_u8_u32(vshlq_n_u32(vreinterpretq_u32_u8(x), imm)); \
 	})
 
 #define _mm_srli_epi32(x, imm)                                            \
@@ -111,10 +111,12 @@ static inline void _mm_store_si128(__m128i *p, __m128i x)
 
 #define _mm_slli_epi64(x, imm)                                            \
 	__extension__({                                                       \
-		vreinterpretq_u8_u64(vqshlq_n_u64(vreinterpretq_u64_u8(x), imm)); \
+		vreinterpretq_u8_u64(vshlq_n_u64(vreinterpretq_u64_u8(x), imm)); \
 	})
 
+#define _mm_add_epi8(x, y) vreinterpretq_u8_u8(vaddq_u8(vreinterpretq_u8_u8(x), vreinterpretq_u8_u8(y)))
 #define _mm_add_epi16(x, y) vreinterpretq_u8_u16(vaddq_u16(vreinterpretq_u16_u8(x), vreinterpretq_u16_u8(y)))
+#define _mm_add_epi32(x, y) vreinterpretq_u8_u32(vaddq_u32(vreinterpretq_u32_u8(x), vreinterpretq_u32_u8(y)))
 
 
 #define _mm_clflush(p)                                 \
@@ -153,14 +155,15 @@ static inline __m128i _mm_add_epi64(__m128i x, __m128i y)
 
 static inline __m128i _mm_aesenc_si128(__m128i pt, __m128i k)
 {
-	__m128i res = vaeseq_u8(pt, k);
-	return vaesmcq_u8(res);
+	__m128i res = vaeseq_u8(pt, vdupq_n_u8(0));
+	res = vaesmcq_u8(res);
+	return veorq_u8(res, k);
 }
 
 static inline __m128i _mm_aesenclast_si128(__m128i pt, __m128i k)
 {
-	__m128i res = vaeseq_u8(pt, k);
-	return res;
+	__m128i res = vaeseq_u8(pt, vdupq_n_u8(0));
+	return veorq_u8(res, k);
 }
 
 static inline __m128i _mm_and_si128(__m128i x, __m128i y)
@@ -201,5 +204,7 @@ static inline __m128i _mm_and_si128(__m128i x, __m128i y)
 
 static inline __m128i _mm_blendv_epi8(__m128i x, __m128i y, __m128i mask)
 {
-	return vbslq_u8(x, y, mask);
+	uint8x16_t sign = vandq_u8(mask, vdupq_n_u8(0x80));
+	uint8x16_t fullmask = vceqq_u8(sign, vdupq_n_u8(0x80));
+	return vbslq_u8(fullmask, y, x);
 }

@@ -1,5 +1,5 @@
 #pragma once
-
+#define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <ctype.h>
 #include <emmintrin.h>

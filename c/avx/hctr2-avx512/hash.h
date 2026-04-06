@@ -6,10 +6,10 @@
 inline __m512i polyreduce512(hctr2_context* ctx, __m512i x)
 {
 	alignas(512) __m512i x0 = _mm512_clmulepi64_epi128(x, ctx->poly, 0x10);
-	alignas(512) __m512i y0 = _mm512_shuffle_epi32(x, 78);
+	alignas(512) __m512i y0 = _mm512_shuffle_epi32(x, (_MM_PERM_ENUM)_MM_SHUFFLE(1, 0, 3, 2));
 	alignas(512) __m512i y1 = _mm512_xor_si512(y0, x0);
 	alignas(512) __m512i x1 = _mm512_clmulepi64_epi128(y1, ctx->poly, 0x10);
-	alignas(512) __m512i y2 = _mm512_shuffle_epi32(y1, 78);
+	alignas(512) __m512i y2 = _mm512_shuffle_epi32(y1, (_MM_PERM_ENUM)_MM_SHUFFLE(1, 0, 3, 2));
 	return _mm512_xor_si512(y2, x1);
 }
 

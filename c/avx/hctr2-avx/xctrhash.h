@@ -62,7 +62,7 @@ static inline __m128i xctrxoradd_hash128(aes_context aesctx, hctr2_context ctx, 
 		size_t loopnum = (mlen - remainder) / ctx.blocklength;
 		uint8_t padded[16];
 		memset(padded, 0, ctx.blocklength);
-		memcpy(padded, N + len - remainder, remainder);
+		memcpy(padded, N + mlen - remainder, remainder);
 		alignas(16) __m128i lastblk = _mm_loadu_si128(((__m128i *)padded));
 		tmp0 = aesenc128(_mm_xor_si128(S, _mm_setr_epi64(_mm_set_pi64x((loopnum + 1)), _mm_setzero_si64())), aesctx.keys128);
 		lastblk = _mm_xor_si128(lastblk, tmp0);
@@ -80,10 +80,10 @@ static inline __m128i xctrxoradd_hash128(aes_context aesctx, hctr2_context ctx, 
 static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx, __m128i S, size_t mlen, uint8_t *N, uint8_t *C, uint8_t *T, size_t tlen)
 {
 
-	alignas(16) __m128i ctr[4] = {_mm_xor_si128(_mm_setr_epi32(1, 0, 0, 0), S),
-								  _mm_xor_si128(_mm_setr_epi32(2, 0, 0, 0), S),
-								  _mm_xor_si128(_mm_setr_epi32(3, 0, 0, 0), S),
-								  _mm_xor_si128(_mm_setr_epi32(4, 0, 0, 0), S)};
+	alignas(16) __m128i ctr[4] = {_mm_setr_epi32(1, 0, 0, 0),
+								  _mm_setr_epi32(2, 0, 0, 0),
+								  _mm_setr_epi32(3, 0, 0, 0),
+								  _mm_setr_epi32(4, 0, 0, 0)};
 	alignas(16) __m128i inc = _mm_setr_epi32(4, 0, 0, 0);
 
 	size_t len = 2 * 8 * tlen + 2;
@@ -92,7 +92,7 @@ static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx
 		len += 1;
 	}
 	alignas(16) __m128i firstblk = _mm_setr_epi64(_mm_set_pi64x(len), _mm_setzero_si64());
-	alignas(16) __m128i X = polydot128(ctx, ctx.htbl[0], firstblk);
+	alignas(16) __m128i X = polydot128(ctx, ctx.htbl[1], firstblk);
 	size_t remainder = tlen % ctx.blocklength;
 	if (tlen >= ctx.blocklength)
 	{
@@ -107,7 +107,7 @@ static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx
 		paddedblk = _mm_loadu_si128(((__m128i *)padded));
 
 		X = _mm_xor_si128(X, paddedblk);
-		X = polydot128(ctx, ctx.htbl[0], X);
+		X = polydot128(ctx, ctx.htbl[1], X);
 	}
 
 	remainder = mlen % ctx.blocklength;
@@ -129,10 +129,10 @@ static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx
 			tmps[2] = _mm_xor_si128(ctr[2], S);
 			tmps[3] = _mm_xor_si128(ctr[3], S);
 
-			tmps[0] = aesenc128(ctr[0], aesctx.keys128);
-			tmps[1] = aesenc128(ctr[1], aesctx.keys128);
-			tmps[2] = aesenc128(ctr[2], aesctx.keys128);
-			tmps[3] = aesenc128(ctr[3], aesctx.keys128);
+			tmps[0] = aesenc128(tmps[0], aesctx.keys128);
+			tmps[1] = aesenc128(tmps[1], aesctx.keys128);
+			tmps[2] = aesenc128(tmps[2], aesctx.keys128);
+			tmps[3] = aesenc128(tmps[3], aesctx.keys128);
 
 			data[0] = _mm_xor_si128(tmps[0], data[0]);
 			data[1] = _mm_xor_si128(tmps[1], data[1]);
@@ -146,10 +146,10 @@ static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx
 
 			Z = _mm_xor_si128(Z, data[0]);
 
-			schoolbook_initialadd128(data[3], ctx.htbl[0], tmps);
-			schoolbook_add128(data[2], ctx.htbl[1], tmps);
-			schoolbook_add128(data[1], ctx.htbl[2], tmps);
-			schoolbook_add128(Z, ctx.htbl[3], tmps);
+			schoolbook_initialadd128(data[3], ctx.htbl[1], tmps);
+			schoolbook_add128(data[2], ctx.htbl[2], tmps);
+			schoolbook_add128(data[1], ctx.htbl[3], tmps);
+			schoolbook_add128(Z, ctx.htbl[4], tmps);
 
 			tmps[3] = _mm_bsrli_si128(tmps[2], 8);
 			tmps[2] = _mm_bslli_si128(tmps[2], 8);
@@ -166,15 +166,15 @@ static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx
 		Z = _mm_xor_si128(X, Y);
 		X = Z;
 		inc = _mm_setr_epi32(1, 0, 0, 0);
-		for (size_t i = 0; i < (loopnum % 4); i++)
+		for (size_t i = 0; i < (loopnum % 8); i++)
 		{
-			data[0] = _mm_loadu_si128((__m128i *)N + loopnum - (loopnum % 4) + i);
+			data[0] = _mm_loadu_si128((__m128i *)N + loopnum - (loopnum % 8) + i);
 			tmps[0] = _mm_xor_si128(ctr[0], S);
 			tmps[0] = aesenc128(tmps[0], aesctx.keys128);
 			tmps[1] = _mm_xor_si128(tmps[0], data[0]);
-			_mm_storeu_si128((__m128i *)C + loopnum - (loopnum % 4) + i, tmps[1]);
+			_mm_storeu_si128((__m128i *)C + loopnum - (loopnum % 8) + i, tmps[1]);
 			X = _mm_xor_si128(X, tmps[1]);
-			X = polydot128(ctx, X, ctx.htbl[0]);
+			X = polydot128(ctx, X, ctx.htbl[1]);
 			ctr[0] = _mm_add_epi64(ctr[0], inc);
 		}
 	}
@@ -194,7 +194,7 @@ static inline __m128i xctrxoradd_hash128x4(aes_context aesctx, hctr2_context ctx
 
 		((uint8_t *)&lastblk)[remainder] = 0x01;
 		X = _mm_xor_si128(X, lastblk);
-		X = polydot128(ctx, ctx.htbl[0], X);
+		X = polydot128(ctx, ctx.htbl[1], X);
 	}
 
 	return X;
@@ -216,7 +216,7 @@ static inline __m128i xctrxoradd_hash128x8(aes_context aesctx, hctr2_context ctx
 		len += 1;
 	}
 	alignas(16) __m128i firstblk = _mm_setr_epi64(_mm_set_pi64x(len), _mm_setzero_si64());
-	alignas(16) __m128i X = polydot128(ctx, ctx.htbl[0], firstblk);
+	alignas(16) __m128i X = polydot128(ctx, ctx.htbl[1], firstblk);
 	size_t remainder = tlen % ctx.blocklength;
 	if (tlen >= ctx.blocklength)
 	{
@@ -231,7 +231,7 @@ static inline __m128i xctrxoradd_hash128x8(aes_context aesctx, hctr2_context ctx
 		paddedblk = _mm_loadu_si128(((__m128i *)padded));
 
 		X = _mm_xor_si128(X, paddedblk);
-		X = polydot128(ctx, ctx.htbl[0], X);
+		X = polydot128(ctx, ctx.htbl[1], X);
 	}
 
 	remainder = mlen % ctx.blocklength;
@@ -265,14 +265,14 @@ static inline __m128i xctrxoradd_hash128x8(aes_context aesctx, hctr2_context ctx
 			Y = polyreduce128(ctx, Y);
 			Z = _mm_xor_si128(X, Y);
 			Z = _mm_xor_si128(Z, tmps[0]);
-			schoolbook_initialadd128(tmps[7], ctx.htbl[0], ttmps);
-			schoolbook_add128(tmps[6], ctx.htbl[1], ttmps);
-			schoolbook_add128(tmps[5], ctx.htbl[2], ttmps);
-			schoolbook_add128(tmps[4], ctx.htbl[3], ttmps);
-			schoolbook_add128(tmps[3], ctx.htbl[4], ttmps);
-			schoolbook_add128(tmps[2], ctx.htbl[5], ttmps);
-			schoolbook_add128(tmps[1], ctx.htbl[6], ttmps);
-			schoolbook_add128(Z, ctx.htbl[7], ttmps);
+			schoolbook_initialadd128(tmps[7], ctx.htbl[1], ttmps);
+			schoolbook_add128(tmps[6], ctx.htbl[2], ttmps);
+			schoolbook_add128(tmps[5], ctx.htbl[3], ttmps);
+			schoolbook_add128(tmps[4], ctx.htbl[4], ttmps);
+			schoolbook_add128(tmps[3], ctx.htbl[5], ttmps);
+			schoolbook_add128(tmps[2], ctx.htbl[6], ttmps);
+			schoolbook_add128(tmps[1], ctx.htbl[7], ttmps);
+			schoolbook_add128(Z, ctx.htbl[8], ttmps);
 			ttmps[3] = _mm_bsrli_si128(ttmps[2], 8);
 			ttmps[2] = _mm_bslli_si128(ttmps[2], 8);
 			X = _mm_xor_si128(ttmps[3], ttmps[1]);
@@ -292,7 +292,7 @@ static inline __m128i xctrxoradd_hash128x8(aes_context aesctx, hctr2_context ctx
 			tmps[1] = _mm_xor_si128(tmps[0], data[0]);
 			_mm_storeu_si128((__m128i *)C + loopnum - (loopnum % 4) + i, tmps[1]);
 			X = _mm_xor_si128(X, tmps[1]);
-			X = polydot128(ctx, X, ctx.htbl[0]);
+			X = polydot128(ctx, X, ctx.htbl[1]);
 			ctr[0] = _mm_add_epi64(ctr[0], inc);
 		}
 	}
@@ -312,7 +312,7 @@ static inline __m128i xctrxoradd_hash128x8(aes_context aesctx, hctr2_context ctx
 
 		((uint8_t *)&lastblk)[remainder] = 0x01;
 		X = _mm_xor_si128(X, lastblk);
-		X = polydot128(ctx, ctx.htbl[0], X);
+		X = polydot128(ctx, ctx.htbl[1], X);
 	}
 
 	return X;

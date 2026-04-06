@@ -1,0 +1,1 @@
+{"scheme": "eme_rijndael256", "inputs": {"pt": "fe8ff0a0ef0f64d272b342a1d7c89803eb35109bb6daf500db54bf0d93f622a5", "tweak": "67b5dbf97b161438a8ab12150d6633c4cee993cdf2c9354a7bb628518ce90a0b", "key": "bad69cfcf3c067e5e72f1730d800390fc2938d6d5251ca73e5fdfed8310fc725"}, "expected": {"ct": "ca1bb45253f8fdcc12dae153a194b827eb99784a6fa0e86b8e50b08ed262d627"}}

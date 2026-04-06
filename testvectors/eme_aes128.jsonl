@@ -1,0 +1,1 @@
+{"scheme": "eme_aes128", "inputs": {"pt": "2567a557f2bfce6a36602509877adcd99a1f2e979d4759cdd96d06047c8a01be50b1aace99918f45cc2e2e8b9fb72398", "tweak": "fe93b65e182874c5d42405f6bdaebf1d", "key": "05c5423bf5250e248719dc5309fc7c7f"}, "expected": {"ct": "a353b3c660f0042197bbf2bf98e8415037a220c4b413bbdc7c23e8e20f5546fb2b4540bf633cecfdbc009727cde4d455"}}

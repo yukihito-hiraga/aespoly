@@ -1,0 +1,1 @@
+{"scheme": "aespolyM_aes128", "inputs": {"pt": "41b074b5bea0cf4e0f74bf74ae58b0d8b6117f7df10b8840c93053080e6a27b325eebf823b987bf895b7c470f393b66c", "key1": "0d9b1bb620adece8bef83871a48209af", "key2": "4feb18ecc7f04aaf42be8d26759e4e93", "h": "15c4dcf369c0d55394c7f46261b3ad9a"}, "expected": {"tag": "39d43020b079acb92f93543cb98f07ab"}}

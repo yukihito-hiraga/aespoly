@@ -27,10 +27,36 @@ inline __m128i polydot128(__m128i poly, __m128i a, __m128i b)
 	return _mm_xor_si128(ppupper, ppl_reduced);
 }
 
+static inline __m128i fmul128(__m128i poly, __m128i a, __m128i b)
+{
+	alignas(16) __m128i tmp0, tmp1, tmp2, tmp3, X, Y;
+	tmp0 = _mm_clmulepi64_si128(a, b, 0x00);
+	tmp1 = _mm_clmulepi64_si128(a, b, 0x11);
+	tmp2 = _mm_clmulepi64_si128(a, b, 0x10);
+	tmp3 = _mm_clmulepi64_si128(a, b, 0x01);
+	tmp2 = _mm_xor_si128(tmp2, tmp3);
+
+	X = _mm_xor_si128(tmp0, _mm_slli_si128(tmp2, 8));
+	Y = _mm_xor_si128(tmp1, _mm_srli_si128(tmp2, 8));
+
+	tmp0 = _mm_clmulepi64_si128(poly, Y, 0x00);
+	tmp1 = _mm_clmulepi64_si128(poly, Y, 0x11);
+	tmp2 = _mm_clmulepi64_si128(poly, Y, 0x10);
+	tmp3 = _mm_clmulepi64_si128(poly, Y, 0x01);
+	tmp2 = _mm_xor_si128(tmp2, tmp3);
+
+	X = _mm_xor_si128(X, _mm_xor_si128(tmp0, _mm_slli_si128(tmp2, 8)));
+	Y = _mm_xor_si128(tmp1, _mm_srli_si128(tmp2, 8));
+
+	X = _mm_xor_si128(X, _mm_clmulepi64_si128(poly, Y, 0x00));
+
+	return X;
+}
+
 void init_htbl128(__m128i *htbl, __m128i poly, __m128i H)
 {
-	htbl[0] = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
-	for (size_t i = 1; i < 5; i++)
+	htbl[0] = polydot128(poly, poly, H);
+	for (size_t i = 1; i < 8; i++)
 	{
 		htbl[i] = polydot128(poly, htbl[i - 1], H);
 	}
@@ -42,6 +68,8 @@ void gmacinit128(aes_context *aesctx, gmac_context *ctx, uint8_t *key)
 
 	aesinit128(aesctx, key);
 	alignas(16) __m128i H = aesenc128(_mm_setzero_si128(), aesctx->keys128);
+	H = byterev(H);
+	H = fmul128(ctx->poly, H, _mm_setr_epi32(2, 0, 0, 0));
 
 	init_htbl128(ctx->htbl, ctx->poly, H);
 }
@@ -77,6 +105,11 @@ inline __m128i polyval128x4(gmac_context ctx, __m128i state, __m128i *blks, size
 	{
 		loadx4(blks + i * 4, data);
 
+		data[0] = byterev(data[0]);
+		data[1] = byterev(data[1]);
+		data[2] = byterev(data[2]);
+		data[3] = byterev(data[3]);
+
 		Y = polyreduce128(ctx.poly, Y);
 		Z = _mm_xor_si128(X, Y);
 		data[0] = _mm_xor_si128(Z, data[0]);
@@ -99,7 +132,7 @@ inline __m128i polyval128x4(gmac_context ctx, __m128i state, __m128i *blks, size
 	for (size_t i = 0; i < remainder; i++)
 	{
 		data[0] = _mm_loadu_si128(blks + loopnum - remainder + i);
-		X = _mm_xor_si128(X, data[0]);
+		X = _mm_xor_si128(X, byterev(data[0]));
 		X = polydot128(ctx.poly, X, ctx.htbl[0]);
 	}
 	return X;
@@ -119,6 +152,15 @@ static inline __m128i polyval128x8(gmac_context ctx, __m128i state, __m128i *P, 
 	for (size_t i = 0; i < (loopnum / 8); i++)
 	{
 		loadx8((__m128i *)P + i * 8, data);
+
+		data[0] = byterev(data[0]);
+		data[1] = byterev(data[1]);
+		data[2] = byterev(data[2]);
+		data[3] = byterev(data[3]);
+		data[4] = byterev(data[4]);
+		data[5] = byterev(data[5]);
+		data[6] = byterev(data[6]);
+		data[7] = byterev(data[7]);
 
 		Y = polyreduce128(ctx.poly, Y);
 		Z = _mm_xor_si128(X, Y);
@@ -145,7 +187,7 @@ static inline __m128i polyval128x8(gmac_context ctx, __m128i state, __m128i *P, 
 	for (size_t i = 0; i < remainder; i++)
 	{
 		data[0] = _mm_loadu_si128((__m128i *)P + loopnum - remainder + i);
-		X = _mm_xor_si128(X, data[0]);
+		X = _mm_xor_si128(X, byterev(data[0]));
 		X = polydot128(ctx.poly, X, ctx.htbl[0]);
 	}
 	return X;
@@ -154,9 +196,8 @@ static inline __m128i polyval128x8(gmac_context ctx, __m128i state, __m128i *P, 
 static inline __m128i ghash128x4(gmac_context ctx, uint8_t *A, size_t Alen, uint8_t* N, size_t Nlen)
 {
 	alignas(16) __m128i X = _mm_setzero_si128();
-	X = polyval128x4(ctx, X, (__m128i *)A, Alen);
-
 	size_t rem = Alen % 16;
+	X = polyval128x4(ctx, X, (__m128i *)A, Alen - rem);
 
 	uint8_t padded[16];
 	alignas(16) __m128i paddedblk = _mm_setzero_si128();
@@ -166,22 +207,24 @@ static inline __m128i ghash128x4(gmac_context ctx, uint8_t *A, size_t Alen, uint
 		memcpy(padded, A + Alen - rem, rem);
 		paddedblk = _mm_loadu_si128(((__m128i *)padded));
 
-		X = _mm_xor_si128(X, paddedblk);
-		X = polydot128(ctx.poly, ctx.htbl[0], X);
+		X = _mm_xor_si128(X, byterev(paddedblk));
+		X = polydot128(ctx.poly, X, ctx.htbl[0]);
 	}
-	alignas(16) __m128i blk = _mm_setr_epi64(_m_from_int64(Alen), _m_from_int64(0));
+	alignas(16) uint8_t chunk[16];
+	memset(chunk, 0, 16);
+	((uint64_t *)(chunk))[1] = Alen * 8;
+	alignas(16) __m128i blk = _mm_loadu_si128((__m128i *)chunk);
 	X = _mm_xor_si128(X, blk);
-	X = polydot128(ctx.poly, ctx.htbl[0], X);
+	X = polydot128(ctx.poly, X, ctx.htbl[0]);
 
-	return X;
+	return byterev(X);
 }
 
 static inline __m128i ghash128x8(gmac_context ctx, uint8_t *A, size_t Alen, uint8_t* N, size_t Nlen)
 {
 	alignas(16) __m128i X = _mm_setzero_si128();
-	X = polyval128x8(ctx, X, (__m128i *)A, Alen);
-
 	size_t rem = Alen % 16;
+	X = polyval128x8(ctx, X, (__m128i *)A, Alen - rem);
 
 	uint8_t padded[16];
 	alignas(16) __m128i paddedblk = _mm_setzero_si128();
@@ -191,12 +234,15 @@ static inline __m128i ghash128x8(gmac_context ctx, uint8_t *A, size_t Alen, uint
 		memcpy(padded, A + Alen - rem, rem);
 		paddedblk = _mm_loadu_si128(((__m128i *)padded));
 
-		X = _mm_xor_si128(X, paddedblk);
-		X = polydot128(ctx.poly, ctx.htbl[0], X);
+		X = _mm_xor_si128(X, byterev(paddedblk));
+		X = polydot128(ctx.poly, X, ctx.htbl[0]);
 	}
-	alignas(16) __m128i blk = _mm_setr_epi64(_m_from_int64(Alen), _m_from_int64(0));
+	alignas(16) uint8_t chunk[16];
+	memset(chunk, 0, 16);
+	((uint64_t *)(chunk))[1] = Alen * 8;
+	alignas(16) __m128i blk = _mm_loadu_si128((__m128i *)chunk);
 	X = _mm_xor_si128(X, blk);
-	X = polydot128(ctx.poly, ctx.htbl[0], X);
+	X = polydot128(ctx.poly, X, ctx.htbl[0]);
 
-	return X;
+	return byterev(X);
 }

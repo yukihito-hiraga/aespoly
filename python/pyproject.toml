@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "aespoly_python"
+version = "0.1.0"
+description = ""
+authors = [
+    "yukihito-hiraga <yukihito.hiraga@uec.ac.jp>"
+]
+license = "MIT"
+
+packages = [
+    {include = "impl", from = "."},
+    {include = "gentv", from = "."},
+    {include = "test", from = "."},
+]
+
+[tool.poetry.dependencies]
+python = ">=3.12"
+pycryptodome = "^3.20.0"
+pycryptodomex = "^3.20.0"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -3,7 +3,10 @@
 #include "headers.h"
 #include "util.h"
 
+#ifndef __USE_GNU
 #define __USE_GNU
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>

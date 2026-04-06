@@ -84,6 +84,11 @@ The results vary for each run but are expected to reproduce values similar to th
 
 ---
 
+### Testing
+
+The test scripts are `tests_x64.sh` and `tests_arm64.sh`.
+Choose the one that matches your environment.
+
 ### Format of the raw results
 
 Benchmark results are stored under the `result` folder.

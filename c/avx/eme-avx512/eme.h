@@ -32,6 +32,40 @@ static inline __m512i quadruple512(__m512i pp1, __m512i pp2, __m512i X)
 	return X;
 }
 
+static inline __m128i mul2_128(__m128i pp, __m128i X)
+{
+	alignas(16) __m128i tmp1, tmp2, tmp3, tmp4, tmp5, tmp6;
+
+	tmp1 = _mm_slli_epi32(X, 1);
+	tmp2 = _mm_srli_epi32(X, 31);
+	tmp3 = _mm_slli_si128(tmp2, 4);
+	X = _mm_xor_si128(tmp1, tmp3);
+	tmp4 = _mm_srli_si128(tmp2, 12);
+	tmp5 = _mm_shuffle_epi8(pp, tmp4);
+	X = _mm_xor_si128(X, tmp5);
+	return X;
+}
+
+static inline __m128i mul16_128(__m128i pp1, __m128i pp2, __m128i X)
+{
+	alignas(16) __m128i tmp1, tmp2, tmp3, tmp4, tmp5, tmp6;
+
+	tmp1 = _mm_slli_epi32(X, 4);
+	tmp2 = _mm_srli_epi32(X, 28);
+	tmp3 = _mm_slli_si128(tmp2, 4);
+	X = _mm_xor_si128(tmp1, tmp3);
+	tmp4 = _mm_srli_si128(tmp2, 12);
+	tmp5 = _mm_shuffle_epi8(pp1, tmp4);
+	tmp6 = _mm_shuffle_epi8(pp2, tmp4);
+	tmp6 = _mm_slli_si128(tmp6, 1);
+	X = _mm_xor_si128(X, _mm_xor_si128(tmp5, tmp6));
+	return X;
+}
+
+#define mul2rev_128(pp, X) byterev(mul2_128(pp, byterev(X)))
+#define mul16rev_128(pp1, pp2, X) byterev(mul16_128(pp1, pp2, byterev(X)))
+#define L128_PTR(ctx) (((__m128i *)((ctx)->L)) + 3)
+
 void emeinit(eme_context *ctx, uint8_t *key)
 {
 	aesinit128(&(ctx->aesctx), key);
@@ -68,209 +102,121 @@ void emeinit(eme_context *ctx, uint8_t *key)
 
 	ctx->poly_quadruple1 = _mm512_broadcast_i64x2(_mm_loadu_si128((__m128i *)chunk));
 	ctx->poly_quadruple2 = _mm512_broadcast_i64x2(_mm_loadu_si128((__m128i *)chunk + 1));
-
-	for (size_t i = 1; i <= 4; i++)
+	__m128i *L = L128_PTR(ctx);
+	L[0] = aesenc128(_mm_setzero_si128(), ctx->aesctx.keys128);
+	for (size_t i = 0; i < 4095; i++)
 	{
-		((__m128i *)ctx->L)[3 + i] = double128(ctx->poly_double128, ((__m128i *)ctx->L)[2 + i]);
-	}
-
-	for (size_t i = 2; i < 2900; i++)
-	{
-		ctx->L[i] = quadruple512(ctx->poly_quadruple1, ctx->poly_quadruple2, ctx->L[i - 1]);
+		L[i + 1] = mul2rev_128(ctx->poly_double128, L[i]);
 	}
 }
 
 static inline __m128i xe(eme_context* ctx, const uint8_t *P, size_t Plen, uint8_t *C)
 {
+	__m128i *L = L128_PTR(ctx);
 	size_t blen = Plen / 16;
-	size_t b512len = blen / 4;
-	size_t b512rem = blen % 4;
-	size_t b512x4len = b512len / 4;
-	size_t b512x4rem = b512len % 4;
+	size_t bx8len = blen / 8;
+	size_t bx8rem = blen % 8;
 
-	alignas(64) __m512i data[4];
-	alignas(64) __m512i tmps[4];
+	alignas(16) __m128i data[8];
+	alignas(16) __m128i tmps[8];
+	__m128i sum = _mm_setzero_si128();
 
-	alignas(64) __m512i sum = _mm512_setzero_si512();
-
-	for (size_t i = 0; i < b512x4len; i++)
+	for (size_t i = 0; i < bx8len; i++)
 	{
-		data[0] = _mm512_loadu_si512((__m512i *)P + 4 * i + 0);
-		data[1] = _mm512_loadu_si512((__m512i *)P + 4 * i + 1);
-		data[2] = _mm512_loadu_si512((__m512i *)P + 4 * i + 2);
-		data[3] = _mm512_loadu_si512((__m512i *)P + 4 * i + 3);
-
-		tmps[0] = _mm512_xor_si512(data[0], ctx->L[4 * i + 0 + 1]);
-		tmps[1] = _mm512_xor_si512(data[1], ctx->L[4 * i + 1 + 1]);
-		tmps[2] = _mm512_xor_si512(data[2], ctx->L[4 * i + 2 + 1]);
-		tmps[3] = _mm512_xor_si512(data[3], ctx->L[4 * i + 3 + 1]);
-
-		tmps[0] = aesenc512(tmps[0], ctx->aesctx.keys);
-		tmps[1] = aesenc512(tmps[1], ctx->aesctx.keys);
-		tmps[2] = aesenc512(tmps[2], ctx->aesctx.keys);
-		tmps[3] = aesenc512(tmps[3], ctx->aesctx.keys);
-
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 0, tmps[0]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 1, tmps[1]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 2, tmps[2]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 3, tmps[3]);
-		sum = _mm512_xor_si512(_mm512_xor_si512(tmps[0], tmps[1]), _mm512_xor_si512(tmps[2], tmps[3]));
+		loadx8((__m128i *)P + 8 * i, data);
+		xorx8_1wise(L + 8 * i, data, tmps);
+		aesx8(ctx->aesctx.keys128, tmps, tmps);
+		storex8((__m128i *)C + 8 * i, tmps);
+		sum_x8(tmps, sum);
 	}
 
-	for (size_t i = b512x4len * 4; i < b512len; i++)
+	for (size_t i = 0; i < bx8rem; i++)
 	{
-		data[0] = _mm512_loadu_si512((__m512i *)P + i);
-		tmps[0] = _mm512_xor_si512(data[0], ctx->L[i + 1]);
-		tmps[0] = aesenc512(tmps[0], ctx->aesctx.keys);
-		_mm512_storeu_si512((__m512i *)C + i, tmps[0]);
-		sum = _mm512_xor_si512(sum, tmps[0]);
+		data[0] = _mm_loadu_si128((__m128i *)P + 8 * bx8len + i);
+		tmps[0] = _mm_xor_si128(L[8 * bx8len + i], data[0]);
+		tmps[0] = aesenc128(tmps[0], ctx->aesctx.keys128);
+		_mm_store_si128((__m128i *)C + 8 * bx8len + i, tmps[0]);
+		sum = _mm_xor_si128(sum, tmps[0]);
 	}
 
-	alignas(16) __m128i data128[4];
-	alignas(16) __m128i tmps128[4];
-	alignas(16) __m128i sum128 = _mm_xor_si128(_mm_xor_si128(((__m128i *)&sum)[0], ((__m128i *)&sum)[1]), _mm_xor_si128(((__m128i *)&sum)[2], ((__m128i *)&sum)[3]));
-
-	for (size_t i = b512len * 4; i < blen; i++)
-	{
-		data128[0] = _mm_loadu_si128((__m128i *)P + i);
-		tmps128[0] = _mm_xor_si128(data128[0], ((__m128i *)ctx->L)[4 + i]);
-		tmps128[0] = aesenc128(tmps128[0], ctx->aesctx.keys128);
-		sum128 = _mm_xor_si128(sum128, tmps128[0]);
-		_mm_storeu_si128((__m128i *)P + i, tmps128[0]);
-	}
-
-	return sum128;
+	return sum;
 }
 
 static inline __m128i middle(eme_context* ctx, __m128i M, const uint8_t *P, size_t Plen, uint8_t *C)
 {
+	__m128i *pp1 = (__m128i *)&ctx->poly_quadruple1;
+	__m128i *pp2 = (__m128i *)&ctx->poly_quadruple2;
 	size_t blen = Plen / 16;
-	size_t b512len = blen / 4;
-	size_t b512rem = blen % 4;
-	size_t b512x4len = b512len / 4;
-	size_t b512x4rem = b512len % 4;
+	size_t bx8len = blen / 8;
+	size_t bx8rem = blen % 8;
 
-	alignas(64) __m512i data[4];
-	alignas(64) __m512i tmps[4];
-	alignas(64) __m512i mask[4];
+	alignas(16) __m128i data[8];
+	alignas(16) __m128i tmps[8];
+	alignas(16) __m128i mask[8];
+	__m128i sum = _mm_setzero_si128();
 
-	alignas(64) __m512i sum = _mm512_setzero_si512();
-
-	((__m128i *)mask)[0] = double128(ctx->poly_double128, M);
-
-	for (size_t i = 1; i < 16; i++)
+	mask[0] = mul2rev_128(ctx->poly_double128, M);
+	for (size_t i = 1; i < 8; i++)
 	{
-		((__m128i *)mask)[i] = double128(ctx->poly_double128, ((__m128i *)mask)[i - 1]);
+		mask[i] = mul2rev_128(ctx->poly_double128, mask[i - 1]);
 	}
 
-	for (size_t i = 0; i < b512x4len; i++)
+	for (size_t i = 0; i < bx8len; i++)
 	{
-		data[0] = _mm512_loadu_si512((__m512i *)P + 4 * i + 0);
-		data[1] = _mm512_loadu_si512((__m512i *)P + 4 * i + 1);
-		data[2] = _mm512_loadu_si512((__m512i *)P + 4 * i + 2);
-		data[3] = _mm512_loadu_si512((__m512i *)P + 4 * i + 3);
+		loadx8((__m128i *)P + 8 * i, data);
+		xorx8_1wise(data, mask, tmps);
+		storex8((__m128i *)C + 8 * i, tmps);
 
-		tmps[0] = _mm512_xor_si512(tmps[0], mask[0]);
-		tmps[1] = _mm512_xor_si512(tmps[1], mask[1]);
-		tmps[2] = _mm512_xor_si512(tmps[2], mask[2]);
-		tmps[3] = _mm512_xor_si512(tmps[3], mask[3]);
+		for (size_t j = 0; j < 4; j++)
+		{
+			mask[j] = mul16rev_128(pp1[0], pp2[0], mask[j]);
+			mask[j] = mul16rev_128(pp1[0], pp2[0], mask[j]);
+		}
 
-		mask[0] = quadruple512(ctx->poly_quadruple1, ctx->poly_quadruple2, mask[3]);
-		mask[1] = quadruple512(ctx->poly_quadruple1, ctx->poly_quadruple2, mask[0]);
-		mask[2] = quadruple512(ctx->poly_quadruple1, ctx->poly_quadruple2, mask[1]);
-		mask[3] = quadruple512(ctx->poly_quadruple1, ctx->poly_quadruple2, mask[2]);
-
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 0, tmps[0]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 1, tmps[1]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 2, tmps[2]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 3, tmps[3]);
+		sum_x8(tmps, sum);
 	}
 
-	for (size_t i = b512x4len * 4; i < b512len; i++)
+	for (size_t i = 0; i < bx8rem; i++)
 	{
-		data[0] = _mm512_loadu_si512((__m512i *)P + i);
-		tmps[0] = _mm512_xor_si512(tmps[0], mask[0]);
-		mask[0] = quadruple512(ctx->poly_quadruple1, ctx->poly_quadruple2, mask[0]);
-		_mm512_storeu_si512((__m512i *)C + i, tmps[0]);
+		data[0] = _mm_loadu_si128((__m128i *)P + 8 * bx8len + i);
+		tmps[0] = _mm_xor_si128(data[0], mask[0]);
+		_mm_store_si128((__m128i *)C + 8 * bx8len + i, tmps[0]);
+		mask[0] = mul2rev_128(ctx->poly_double128, mask[0]);
+		sum = _mm_xor_si128(sum, tmps[0]);
 	}
 
-	alignas(16) __m128i data128[4];
-	alignas(16) __m128i tmps128[4];
-	alignas(16) __m128i mask128[4];
-	alignas(16) __m128i sum128[2];
-
-	sum128[0] = _mm_xor_si128(_mm_xor_si128(((__m128i *)&sum)[0], ((__m128i *)&sum)[1]), _mm_xor_si128(((__m128i *)&sum)[2], ((__m128i *)&sum)[3]));
-
-	mask128[0] = ((__m128i *)mask)[0];
-
-	for (size_t i = b512len * 4; i < blen; i++)
-	{
-		data128[0] = _mm_loadu_si128((__m128i *)P + i);
-		tmps128[0] = _mm_xor_si128(mask128[0], data128[0]);
-		sum128[0] = _mm_xor_si128(sum128[0], data128[0]);
-		mask128[0] = double128(ctx->poly_double128, mask128[0]);
-		_mm_storeu_si128((__m128i *)C + i, tmps128[0]);
-	}
-
-	return sum128[0];
+	return sum;
 }
 
 static inline void ex(eme_context* ctx, const uint8_t *P, size_t Plen, uint8_t *C)
 {
+	__m128i *L = L128_PTR(ctx);
 	size_t blen = Plen / 16;
-	size_t b512len = blen / 4;
-	size_t b512rem = blen % 4;
-	size_t b512x4len = b512len / 4;
-	size_t b512x4rem = b512len % 4;
+	size_t bx8len = blen / 8;
+	size_t bx8rem = blen % 8;
 
-	alignas(64) __m512i data[4];
-	alignas(64) __m512i tmps[4];
+	alignas(16) __m128i data[8];
+	alignas(16) __m128i tmps[8];
 
-	for (size_t i = 0; i < b512x4len; i++)
+	for (size_t i = 0; i < bx8len; i++)
 	{
-		data[0] = _mm512_loadu_si512((__m512i *)P + 4 * i + 0);
-		data[1] = _mm512_loadu_si512((__m512i *)P + 4 * i + 1);
-		data[2] = _mm512_loadu_si512((__m512i *)P + 4 * i + 2);
-		data[3] = _mm512_loadu_si512((__m512i *)P + 4 * i + 3);
-
-		tmps[0] = aesenc512(data[0], ctx->aesctx.keys);
-		tmps[1] = aesenc512(data[1], ctx->aesctx.keys);
-		tmps[2] = aesenc512(data[2], ctx->aesctx.keys);
-		tmps[3] = aesenc512(data[3], ctx->aesctx.keys);
-
-		tmps[0] = _mm512_xor_si512(tmps[0], ctx->L[4 * i + 0 + 1]);
-		tmps[1] = _mm512_xor_si512(tmps[1], ctx->L[4 * i + 1 + 1]);
-		tmps[2] = _mm512_xor_si512(tmps[2], ctx->L[4 * i + 2 + 1]);
-		tmps[3] = _mm512_xor_si512(tmps[3], ctx->L[4 * i + 3 + 1]);
-
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 0, tmps[0]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 1, tmps[1]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 2, tmps[2]);
-		_mm512_storeu_si512((__m512i *)C + 4 * i + 3, tmps[3]);
+		loadx8((__m128i *)P + 8 * i, data);
+		copyx8(data, tmps);
+		aesx8(ctx->aesctx.keys128, tmps, tmps);
+		xorx8_1wise(L + 8 * i, tmps, tmps);
+		storex8((__m128i *)C + 8 * i, tmps);
 	}
 
-	for (size_t i = b512x4len * 4; i < b512len; i++)
+	for (size_t i = 0; i < bx8rem; i++)
 	{
-		data[0] = _mm512_loadu_si512((__m512i *)P + i);
-		tmps[0] = aesenc512(data[0], ctx->aesctx.keys);
-		tmps[0] = _mm512_xor_si512(tmps[0], ctx->L[i + 1]);
-
-		_mm512_storeu_si512((__m512i *)C + i, tmps[0]);
-	}
-
-	alignas(16) __m128i data128[4];
-	alignas(16) __m128i tmps128[4];
-
-	for (size_t i = b512len * 4; i < blen; i++)
-	{
-		data128[0] = _mm_loadu_si128((__m128i *)P + i);
-		tmps128[0] = aesenc128(data128[0], ctx->aesctx.keys128);
-		tmps128[0] = _mm_xor_si128(tmps128[0], ((__m128i *)ctx->L)[4 + i]);
-		_mm_storeu_si128((__m128i *)P + i, tmps128[0]);
+		data[0] = _mm_loadu_si128((__m128i *)P + 8 * bx8len + i);
+		tmps[0] = aesenc128(data[0], ctx->aesctx.keys128);
+		tmps[0] = _mm_xor_si128(L[8 * bx8len + i], tmps[0]);
+		_mm_store_si128((__m128i *)C + 8 * bx8len + i, tmps[0]);
 	}
 }
 
-static inline __m128i eme(eme_context* ctx, uint8_t *T, const uint8_t *P, size_t Plen, uint8_t *C)
+static inline void eme(eme_context* ctx, uint8_t *T, const uint8_t *P, size_t Plen, uint8_t *C)
 {
 	alignas(16) __m128i t, sp_ppp1, mp, mc, sc, ccc1;
 	t = _mm_loadu_si128((__m128i *)T);

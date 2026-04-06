@@ -148,14 +148,14 @@ static inline void tweaker(aespoly_context ctx, bool mln, const uint8_t *T, size
 		mulinit_n2(dataL, ctx.htbl, tmpsL, 8);
 		rijndael256_roundx4(ctx.rijndael256ctx, 2, tmpsR);
 		rijndael256_roundx4(ctx.rijndael256ctx, 3, tmpsR);
-		muladd_n2(dataL, ctx.htbl, tmpsL, 1, 8);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 8, 1);
 		rijndael256_roundx4(ctx.rijndael256ctx, 4, tmpsR);
 
 		tweaker_round(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 1);
 		tweaker_round(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 2);
 
 		rijndael256_roundx4(ctx.rijndael256ctx, 13, tmpsR);
-		muladd_n2(dataL, ctx.htbl, tmpsL, 6, 8);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 8, 6);
 		rijndael256_lastroundx4(ctx.rijndael256ctx, tmpsR);
 		muladdlast_n2(Z, ctx.htbl, tmpsL, 8);
 
@@ -622,9 +622,9 @@ static inline void upperx8(aespoly_context ctx, __m128i *state, const uint8_t *M
 		memset(padded, 0, 32);
 		memcpy(padded, M + Mlen - 32 - rem, rem);
 		padded[rem] = 0x80;
-		alignas(16) __m128i paddedblk[2];
-		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
-		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
+		alignas(16) __m128i paddedblk[2] = {
+		_mm_loadu_si128((__m128i *)padded),
+		_mm_loadu_si128((__m128i *)padded + 1)};
 
 		seq_graycode_n2x1(mask, ctx.omega, dlen);
 

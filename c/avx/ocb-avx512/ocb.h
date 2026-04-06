@@ -135,7 +135,7 @@ inline __m512i omegax2(ocb_context ctx, __m512i omega)
 	alignas(64) __m512i tmp1, tmp2;
 	omega = _mm512_slli_epi32(omega, 1);
 	tmp1 = _mm512_srli_epi32(omega, 31);
-	tmp1 = _mm512_shuffle_epi32(tmp1, _MM_SHUFFLE(2, 1, 0, 3));
+	tmp1 = _mm512_shuffle_epi32(tmp1, (_MM_PERM_ENUM)_MM_SHUFFLE(2, 1, 0, 3));
 	tmp2 = _mm512_and_si512(ctx.mask, tmp1);
 	tmp1 = _mm512_xor_si512(tmp1, tmp2);
 
@@ -150,7 +150,7 @@ inline __m512i omegax16(ocb_context ctx, __m512i omega)
 	alignas(64) __m512i tmp1, tmp2;
 	omega = _mm512_slli_epi32(omega, 4);
 	tmp1 = _mm512_srli_epi32(omega, 28);
-	tmp1 = _mm512_shuffle_epi32(tmp1, _MM_SHUFFLE(2, 1, 0, 3));
+	tmp1 = _mm512_shuffle_epi32(tmp1, (_MM_PERM_ENUM)_MM_SHUFFLE(2, 1, 0, 3));
 	tmp2 = _mm512_and_si512(ctx.mask, tmp1);
 	tmp1 = _mm512_xor_si512(tmp1, tmp2);
 
@@ -223,10 +223,10 @@ void ocbinit512(aes_context *aesctx, ocb_context *ctx, uint8_t *key)
 		alignas(512) __m512i pplower = _mm512_xor_si512(ppmid_ls, pp00);
 
 		alignas(512) __m512i x0 = _mm512_clmulepi64_epi128(pplower, ctx->poly, 0x10);
-		alignas(512) __m512i y0 = _mm512_shuffle_epi32(pplower, 78);
+		alignas(512) __m512i y0 = _mm512_shuffle_epi32(pplower, (_MM_PERM_ENUM)_MM_SHUFFLE(1, 0, 3, 2));
 		alignas(512) __m512i y1 = _mm512_xor_si512(y0, x0);
 		alignas(512) __m512i x1 = _mm512_clmulepi64_epi128(y1, ctx->poly, 0x10);
-		alignas(512) __m512i y2 = _mm512_shuffle_epi32(y1, 78);
+		alignas(512) __m512i y2 = _mm512_shuffle_epi32(y1, (_MM_PERM_ENUM)_MM_SHUFFLE(1, 0, 3, 2));
 		alignas(512) __m512i ppl_reduced = _mm512_xor_si512(y2, x1);
 
 		ctx->omegafirst = _mm512_xor_si512(ppupper, ppl_reduced);

@@ -11,3 +11,6 @@ result
 **/__pycache__
 **/.venv/
 **/venv/
+
+subprojects/**
+!subprojects/*.wrap

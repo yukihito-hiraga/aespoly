@@ -5,7 +5,7 @@
 #include "ctrhash.h"
 #include "hash.h"
 
-#define min(a, b) (a > b) ? b : a
+#define min_size(a, b) (a > b) ? b : a
 
 void init_htbl128(aesgcm_context *ctx, __m128i H)
 {
@@ -13,12 +13,12 @@ void init_htbl128(aesgcm_context *ctx, __m128i H)
     //myprint_m128(polydot128(*ctx, _mm_setr_epi32(0x1, 0, 0, 0), _mm_setr_epi32(0x1, 0, 0, 0)), "inv");
 
     ctx->htbl[0] = polydot128(*ctx, ctx->poly, H);
-    printf("%d ", 0);
+    // printf("%d ", 0);
     //myprint_m128(ctx->htbl[0], "htbl");
     for (size_t i = 1; i < 4; i++)
     {
         ctx->htbl[i] = polydot128(*ctx, ctx->htbl[i - 1], H);
-        printf("%ld ", i);
+        // printf("%ld ", i);
         //myprint_m128(ctx->htbl[i], "htbl");
     }
 }
@@ -68,6 +68,18 @@ void aesgcminit128(aesgcm_context *ctx, uint8_t *key)
     
 }
 
+static inline __m128i gcm_j0_from_iv(aesgcm_context ctx, const uint8_t *IV, size_t IVlen)
+{
+    uint8_t chunk[16];
+    memset(chunk, 0, 16);
+    ((__uint64_t *)chunk)[0] = (uint64_t)IVlen * 8;
+    __m128i X = ghash128x4(ctx, 0, 0, (uint8_t *)IV, IVlen);
+    __m128i blk = _mm_loadu_si128((__m128i *)chunk);
+    X = _mm_xor_si128(X, blk);
+    X = polydot128(ctx, X, ctx.htbl[0]);
+    return byterev(X);
+}
+
 static inline void aesgcm128x4(aesgcm_context ctx, uint8_t *IV, size_t IVlen, uint8_t *A, size_t Alen, uint8_t *P, size_t Plen, uint8_t *C, uint8_t *Tag, size_t Taglen)
 {
     alignas(16) __m128i S;
@@ -76,9 +88,10 @@ static inline void aesgcm128x4(aesgcm_context ctx, uint8_t *IV, size_t IVlen, ui
     uint8_t chunk[16];
     memset(chunk, 0, 16);
 
-    if (IVlen + 32 == 128)
+    if (IVlen + 4 == 16)
     {
         uint8_t s[16];
+		memset(s, 0, 16);
         memcpy(s, IV, 12);
         s[15] = 1;
 
@@ -86,18 +99,14 @@ static inline void aesgcm128x4(aesgcm_context ctx, uint8_t *IV, size_t IVlen, ui
     }
     else
     {
-        S = ghash128x4(ctx, 0, 0, IV, IVlen);
-        ((uint64_t*)(chunk+8))[0] = IVlen;
-        tmp = _mm_loadu_si128((__m128i*)chunk);
-        S = _mm_xor_si128(S, tmp);
-        S = polydot128(ctx, S, ctx.htbl[0]);
+        S = gcm_j0_from_iv(ctx, IV, IVlen);
     }
-
+	
     T = ctrhash128x4(ctx, A, Alen, S, P, Plen, C);
     tmp = aesenc128(S, ctx.aesctx.keys128);
     T = _mm_xor_si128(tmp, T);
 
-    memcpy(Tag, (uint8_t *)&T, min(Taglen, 16));
+    memcpy(Tag, (uint8_t *)&T, min_size(Taglen, 16));
 }
 
 static inline void aesgcm128x8(aesgcm_context ctx, uint8_t *IV, size_t IVlen, uint8_t *A, size_t Alen, uint8_t *P, size_t Plen, uint8_t *C, uint8_t *Tag, size_t Taglen)
@@ -108,9 +117,10 @@ static inline void aesgcm128x8(aesgcm_context ctx, uint8_t *IV, size_t IVlen, ui
     uint8_t chunk[16];
     memset(chunk, 0, 16);
 
-    if (IVlen + 32 == 128)
+    if (IVlen + 4 == 16)
     {
         uint8_t s[16];
+        memset(s, 0, 16);
         memcpy(s, IV, 12);
         s[15] = 1;
 
@@ -118,18 +128,14 @@ static inline void aesgcm128x8(aesgcm_context ctx, uint8_t *IV, size_t IVlen, ui
     }
     else
     {
-        S = ghash128x8(ctx, 0, 0, IV, IVlen);
-        ((uint64_t*)(chunk+8))[0] = IVlen;
-        tmp = _mm_loadu_si128((__m128i*)chunk);
-        S = _mm_xor_si128(S, tmp);
-        S = polydot128(ctx, S, ctx.htbl[0]);
+        S = gcm_j0_from_iv(ctx, IV, IVlen);
     }
 
     T = ctrhash128x8(ctx, A, Alen, S, P, Plen, C);
     tmp = aesenc128(S, ctx.aesctx.keys128);
     T = _mm_xor_si128(tmp, T);
 
-    memcpy(Tag, (uint8_t *)&T, min(Taglen, 16));
+    memcpy(Tag, (uint8_t *)&T, min_size(Taglen, 16));
 }
 
 static inline void aesgcm128_serialx4(aesgcm_context ctx, uint8_t *IV, size_t IVlen, uint8_t *A, size_t Alen, uint8_t *P, size_t Plen, uint8_t *C, uint8_t *Tag, size_t Taglen)
@@ -140,9 +146,10 @@ static inline void aesgcm128_serialx4(aesgcm_context ctx, uint8_t *IV, size_t IV
     uint8_t chunk[16];
     memset(chunk, 0, 16);
 
-    if (IVlen + 32 == 128)
+    if (IVlen + 4 == 16)
     {
         uint8_t s[16];
+        memset(s, 0, 16);
         memcpy(s, IV, 12);
         s[15] = 1;
 
@@ -150,28 +157,25 @@ static inline void aesgcm128_serialx4(aesgcm_context ctx, uint8_t *IV, size_t IV
     }
     else
     {
-        S = ghash128x4(ctx, 0, 0, IV, IVlen);
-        ((uint64_t*)(chunk+8))[0] = IVlen;
-        tmp = _mm_loadu_si128((__m128i*)chunk);
-        S = _mm_xor_si128(S, tmp);
-        S = polydot128(ctx, S, ctx.htbl[0]);
+        S = gcm_j0_from_iv(ctx, IV, IVlen);
     }
 
     gctr128x4(ctx, S, P, Plen, C);
     T = ghash128x4(ctx, A, Alen, C, Plen);
 
-    memset(chunk, 0, 16);
+	memset(chunk, 0, 16);
 
-	((uint64_t*)(chunk+0))[0] = Alen;
-	((uint64_t*)(chunk+8))[0] = Plen;
-	tmp= _mm_loadu_si128((__m128i*)chunk);
+	((uint64_t *)(chunk + 0))[0] = Plen * 8;
+    ((uint64_t *)(chunk + 8))[0] = Alen * 8;
+	tmp = _mm_loadu_si128((__m128i*)chunk);
     T = _mm_xor_si128(T, tmp);
     T = polydot128(ctx, T, ctx.htbl[0]);
+    T = byterev(T);
 
     tmp = aesenc128(S, ctx.aesctx.keys128);
     T = _mm_xor_si128(tmp, T);
 
-    memcpy(Tag, (uint8_t *)&T, min(Taglen, 16));
+    memcpy(Tag, (uint8_t *)&T, min_size(Taglen, 16));
 }
 
 static inline void aesgcm128_serialx8(aesgcm_context ctx, uint8_t *IV, size_t IVlen, uint8_t *A, size_t Alen, uint8_t *P, size_t Plen, uint8_t *C, uint8_t *Tag, size_t Taglen)
@@ -182,9 +186,10 @@ static inline void aesgcm128_serialx8(aesgcm_context ctx, uint8_t *IV, size_t IV
     uint8_t chunk[16];
     memset(chunk, 0, 16);
 
-    if (IVlen + 32 == 128)
+    if (IVlen + 4 == 16)
     {
         uint8_t s[16];
+        memset(s, 0, 16);
         memcpy(s, IV, 12);
         s[15] = 1;
 
@@ -192,26 +197,23 @@ static inline void aesgcm128_serialx8(aesgcm_context ctx, uint8_t *IV, size_t IV
     }
     else
     {
-        S = ghash128x8(ctx, 0, 0, IV, IVlen);
-        ((uint64_t*)(chunk+8))[0] = IVlen;
-        tmp = _mm_loadu_si128((__m128i*)chunk);
-        S = _mm_xor_si128(S, tmp);
-        S = polydot128(ctx, S, ctx.htbl[0]);
+        S = gcm_j0_from_iv(ctx, IV, IVlen);
     }
 
     gctr128x8(ctx, S, P, Plen, C);
     T = ghash128x8(ctx, A, Alen, C, Plen);
 
-    memset(chunk, 0, 16);
+	memset(chunk, 0, 16);
 
-	((uint64_t*)(chunk+0))[0] = Alen;
-	((uint64_t*)(chunk+8))[0] = Plen;
-	tmp= _mm_loadu_si128((__m128i*)chunk);
+	((uint64_t*)(chunk+0))[0] = Plen * 8;
+	((uint64_t*)(chunk+8))[0] = Alen * 8;
+	tmp = _mm_loadu_si128((__m128i*)chunk);
     T = _mm_xor_si128(T, tmp);
     T = polydot128(ctx, T, ctx.htbl[0]);
+    T = byterev(T);
 
     tmp = aesenc128(S, ctx.aesctx.keys128);
     T = _mm_xor_si128(tmp, T);
 
-    memcpy(Tag, (uint8_t *)&T, min(Taglen, 16));
+    memcpy(Tag, (uint8_t *)&T, min_size(Taglen, 16));
 }

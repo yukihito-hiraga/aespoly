@@ -28,6 +28,7 @@ static inline void xctrxoradd_hash128x4(hctr2_context ctx, __m128i *state, __m12
 
 	alignas(16) __m128i data[16];
 	alignas(16) __m128i tmps[24];
+	alignas(16) __m128i htbl8[16];
 
 	alignas(16) __m128i ctr[16];
 	alignas(16) __m128i inc4[16];
@@ -35,12 +36,17 @@ static inline void xctrxoradd_hash128x4(hctr2_context ctx, __m128i *state, __m12
 
 	for (size_t i = 0; i < 4; i++)
 	{
-		ctr[2 * i] = _mm_setr_epi32(0, 0, 0, 0);
-		ctr[2 * i + 1] = _mm_setr_epi32(i + 1, 0, 0, 0);
-		inc4[2 * i] = _mm_srli_si128(_mm_setr_epi32(1 << 2, 0, 0, 0), 2);
-		inc4[2 * i + 1] = _mm_setr_epi32(4, 0, 0, 0);
-		inc[2 * i] = _mm_srli_si128(_mm_setr_epi32(1 << 2, 0, 0, 0), 2);
-		inc[2 * i + 1] = _mm_setr_epi32(1, 0, 0, 0);
+		ctr[2 * i] = _mm_setr_epi32(i + 1, 0, 0, 0);
+		ctr[2 * i + 1] = _mm_setr_epi32(0, 0, 0, 0);
+		inc4[2 * i] = _mm_setr_epi32(4, 0, 0, 0);
+		inc4[2 * i + 1] = _mm_setzero_si128();
+		inc[2 * i] = _mm_setr_epi32(1, 0, 0, 0);
+		inc[2 * i + 1] = _mm_setzero_si128();
+	}
+	for (size_t i = 0; i < 8; i++)
+	{
+		htbl8[i] = ctx.htbl[i + 1];
+		htbl8[i + 8] = ctx.htbl[i + 17];
 	}
 
 	__m128i *ttmps = tmps + 16;
@@ -64,14 +70,14 @@ static inline void xctrxoradd_hash128x4(hctr2_context ctx, __m128i *state, __m12
 		Z[0] = _mm_xor_si128(Z[0], tmps[0]);
 		Z[1] = _mm_xor_si128(Z[1], tmps[0]);
 
-		mulinit_n2(tmps, ctx.htbl, ttmps, 8);
-		muladd_n2(tmps, ctx.htbl, ttmps, 8, 1);
-		muladd_n2(tmps, ctx.htbl, ttmps, 8, 2);
-		muladd_n2(tmps, ctx.htbl, ttmps, 8, 3);
-		muladd_n2(tmps, ctx.htbl, ttmps, 8, 4);
-		muladd_n2(tmps, ctx.htbl, ttmps, 8, 5);
-		muladd_n2(tmps, ctx.htbl, ttmps, 8, 6);
-		muladdlast_n2(Z, ctx.htbl, ttmps, 8);
+		mulinit_n2(tmps, htbl8, ttmps, 8);
+		muladd_n2(tmps, htbl8, ttmps, 8, 1);
+		muladd_n2(tmps, htbl8, ttmps, 8, 2);
+		muladd_n2(tmps, htbl8, ttmps, 8, 3);
+		muladd_n2(tmps, htbl8, ttmps, 8, 4);
+		muladd_n2(tmps, htbl8, ttmps, 8, 5);
+		muladd_n2(tmps, htbl8, ttmps, 8, 6);
+		muladdlast_n2(Z, htbl8, ttmps, 8);
 
 		ttmps[3] = _mm_bsrli_si128(ttmps[2], 8);
 		ttmps[2] = _mm_bslli_si128(ttmps[2], 8);
@@ -100,21 +106,21 @@ static inline void xctrxoradd_hash128x4(hctr2_context ctx, __m128i *state, __m12
 	for (size_t i = 0; i < dx4rem; i++)
 	{
 		loadx2((__m128i *)M + dx4len * 8 + i * 2, data);
-		copyx2(ctr, tmps);
-		addkey256(ctx.key, ctr, tmps);
+		xorx2_1wise(S, ctr, tmps);
+		addkey256(ctx.key, tmps, tmps);
 		simpira_b2_128(ctx.simpira_ctx, tmps[0], tmps[1]);
 		addkey256(ctx.key, tmps, tmps);
 		xorx2_1wise(tmps, data, tmps);
 
 		X[0] = _mm_xor_si128(X[0], tmps[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 		X[0] = _mm_xor_si128(X[0], tmps[1]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 
 		X[1] = _mm_xor_si128(X[1], tmps[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 		X[1] = _mm_xor_si128(X[1], tmps[1]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 
 		addx2_1wise(inc, ctr, ctr);
 		scatter_store_n2x1((__m128i *)C + dx4len * 8 + i * 2, tmps);
@@ -131,7 +137,7 @@ static inline void xctrxoradd_hash128x4(hctr2_context ctx, __m128i *state, __m12
 		lastblk[0] = _mm_loadu_si128((__m128i *)padded);
 		lastblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
 
-		copyx2(ctr, tmps);
+		xorx2_1wise(S, ctr, tmps);
 		xorx2_1wise(ctx.key, tmps, tmps);
 		simpira_b2_128(ctx.simpira_ctx, tmps[0], tmps[1]);
 		xorx2_1wise(ctx.key, tmps, tmps);
@@ -139,17 +145,18 @@ static inline void xctrxoradd_hash128x4(hctr2_context ctx, __m128i *state, __m12
 
 		memcpy((__m128i *)(C + dlen * 32), (uint8_t *)tmps, Mrem);
 
+		memset(((uint8_t *)tmps) + Mrem, 0, 32 - Mrem);
 		((uint8_t *)&tmps)[Mrem] = 0x01;
 
 		X[0] = _mm_xor_si128(X[0], tmps[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 		X[0] = _mm_xor_si128(X[0], tmps[1]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 
 		X[1] = _mm_xor_si128(X[1], tmps[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 		X[1] = _mm_xor_si128(X[1], tmps[1]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 	}
 
 	hash[0] = X[0];
@@ -178,12 +185,12 @@ static inline void xctrxoradd_hash128x8(hctr2_context ctx, __m128i *state, __m12
 
 	for (size_t i = 0; i < 8; i++)
 	{
-		ctr[2 * i] = _mm_setr_epi32(0, 0, 0, 0);
-		ctr[2 * i + 1] = _mm_setr_epi32(i + 1, 0, 0, 0);
-		inc8[2 * i] = _mm_srli_si128(_mm_setr_epi32(1 << 2, 0, 0, 0), 2);
-		inc8[2 * i + 1] = _mm_setr_epi32(8, 0, 0, 0);
-		inc[2 * i] = _mm_srli_si128(_mm_setr_epi32(1 << 2, 0, 0, 0), 2);
-		inc[2 * i + 1] = _mm_setr_epi32(1, 0, 0, 0);
+		ctr[2 * i] = _mm_setr_epi32(i + 1, 0, 0, 0);
+		ctr[2 * i + 1] = _mm_setr_epi32(0, 0, 0, 0);
+		inc8[2 * i] = _mm_setr_epi32(8, 0, 0, 0);
+		inc8[2 * i + 1] = _mm_setzero_si128();
+		inc[2 * i] = _mm_setr_epi32(1, 0, 0, 0);
+		inc[2 * i + 1] = _mm_setzero_si128();
 	}
 
 	__m128i *ttmps = tmps + 16;
@@ -207,22 +214,30 @@ static inline void xctrxoradd_hash128x8(hctr2_context ctx, __m128i *state, __m12
 		Z[0] = _mm_xor_si128(Z[0], tmps[0]);
 		Z[1] = _mm_xor_si128(Z[1], tmps[0]);
 
-		mulinit_n2(tmps, ctx.htbl, ttmps, 16);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 1);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 2);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 3);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 4);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 5);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 6);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 7);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 8);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 9);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 10);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 11);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 12);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 13);
-		muladd_n2(tmps, ctx.htbl, ttmps, 16, 14);
-		muladdlast_n2(Z, ctx.htbl, ttmps, 16);
+		alignas(16) __m128i htbl16[32];
+		for (size_t j = 0; j < 15; j++)
+		{
+			htbl16[j] = ctx.htbl[j + 1];
+			htbl16[j + 16] = ctx.htbl[j + 17];
+		}
+		htbl16[15] = polydot128(ctx.poly, ctx.htbl[15], ctx.htbl[1]);
+		htbl16[31] = polydot128(ctx.poly, ctx.htbl[31], ctx.htbl[17]);
+		mulinit_n2(tmps, htbl16, ttmps, 16);
+		muladd_n2(tmps, htbl16, ttmps, 16, 1);
+		muladd_n2(tmps, htbl16, ttmps, 16, 2);
+		muladd_n2(tmps, htbl16, ttmps, 16, 3);
+		muladd_n2(tmps, htbl16, ttmps, 16, 4);
+		muladd_n2(tmps, htbl16, ttmps, 16, 5);
+		muladd_n2(tmps, htbl16, ttmps, 16, 6);
+		muladd_n2(tmps, htbl16, ttmps, 16, 7);
+		muladd_n2(tmps, htbl16, ttmps, 16, 8);
+		muladd_n2(tmps, htbl16, ttmps, 16, 9);
+		muladd_n2(tmps, htbl16, ttmps, 16, 10);
+		muladd_n2(tmps, htbl16, ttmps, 16, 11);
+		muladd_n2(tmps, htbl16, ttmps, 16, 12);
+		muladd_n2(tmps, htbl16, ttmps, 16, 13);
+		muladd_n2(tmps, htbl16, ttmps, 16, 14);
+		muladdlast_n2(Z, htbl16, ttmps, 16);
 
 		ttmps[3] = _mm_bsrli_si128(ttmps[2], 8);
 		ttmps[2] = _mm_bslli_si128(ttmps[2], 8);
@@ -251,21 +266,21 @@ static inline void xctrxoradd_hash128x8(hctr2_context ctx, __m128i *state, __m12
 	for (size_t i = 0; i < dx8rem; i++)
 	{
 		loadx2((__m128i *)M + dx8len * 16 + i * 2, data);
-		copyx2(ctr, tmps);
-		addkey256(ctx.key, ctr, tmps);
+		xorx2_1wise(S, ctr, tmps);
+		addkey256(ctx.key, tmps, tmps);
 		simpira_b2_128(ctx.simpira_ctx, tmps[0], tmps[1]);
 		addkey256(ctx.key, tmps, tmps);
 		xorx2_1wise(tmps, data, tmps);
 
 		X[0] = _mm_xor_si128(X[0], tmps[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 		X[0] = _mm_xor_si128(X[0], tmps[1]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 
 		X[1] = _mm_xor_si128(X[1], tmps[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 		X[1] = _mm_xor_si128(X[1], tmps[1]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 
 		addx2_1wise(inc, ctr, ctr);
 		scatter_store_n2x1((__m128i *)C + dx8len * 16 + i * 2, tmps);
@@ -282,7 +297,7 @@ static inline void xctrxoradd_hash128x8(hctr2_context ctx, __m128i *state, __m12
 		lastblk[0] = _mm_loadu_si128((__m128i *)padded);
 		lastblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
 
-		copyx2(ctr, tmps);
+		xorx2_1wise(S, ctr, tmps);
 		xorx2_1wise(ctx.key, tmps, tmps);
 		simpira_b2_128(ctx.simpira_ctx, tmps[0], tmps[1]);
 		xorx2_1wise(ctx.key, tmps, tmps);
@@ -290,17 +305,18 @@ static inline void xctrxoradd_hash128x8(hctr2_context ctx, __m128i *state, __m12
 
 		memcpy((__m128i *)(C + dlen * 32), (uint8_t *)tmps, Mrem);
 
+		memset(((uint8_t *)tmps) + Mrem, 0, 32 - Mrem);
 		((uint8_t *)&tmps)[Mrem] = 0x01;
 
 		X[0] = _mm_xor_si128(X[0], tmps[0]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 		X[0] = _mm_xor_si128(X[0], tmps[1]);
-		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[1]);
 
 		X[1] = _mm_xor_si128(X[1], tmps[0]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 		X[1] = _mm_xor_si128(X[1], tmps[1]);
-		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[17]);
 	}
 
 	hash[0] = X[0];

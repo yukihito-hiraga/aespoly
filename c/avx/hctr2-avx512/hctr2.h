@@ -30,6 +30,8 @@ void init_htbl512(hctr2_context *ctx, __m128i H)
 
 void hctr2init512(aes_context *aesctx, hctr2_context *ctx, uint8_t *key)
 {
+    ctx->blocklength = 16;
+    ctx->poly = _mm512_broadcast_i64x2(_mm_setr_epi32(0x1, 0, 0, 0xc2000000));
     aesctx->keys[0] = _mm512_broadcast_i64x2(_mm_loadu_si128((__m128i *)key));
     aesctx->keys[1] = aeskeyex(aesctx->keys[0], 0x01);
     aesctx->keys[2] = aeskeyex(aesctx->keys[1], 0x02);
@@ -42,10 +44,11 @@ void hctr2init512(aes_context *aesctx, hctr2_context *ctx, uint8_t *key)
     aesctx->keys[9] = aeskeyex(aesctx->keys[8], 0x1B);
     aesctx->keys[10] = aeskeyex(aesctx->keys[9], 0x36);
 
-    alignas(512) __m512i lh = _mm512_setr_epi64(1, 0, 0, 0, 0, 0, 0, 0);
-    lh = aesenc512(lh, aesctx->keys);
-    init_htbl512(ctx, ((__m128i *)&lh)[1]);
-    ctx->L = lh;
+    alignas(512) __m512i H = aesenc512(_mm512_setzero_si512(), aesctx->keys);
+    alignas(512) __m512i L = _mm512_broadcast_i64x2(_mm_setr_epi32(1, 0, 0, 0));
+    L = aesenc512(L, aesctx->keys);
+    init_htbl512(ctx, _mm512_castsi512_si128(H));
+    ctx->L = L;
 }
 
 static inline void hctr2enc512(aes_context* aesctx, hctr2_context* ctx, uint8_t *P, size_t mlen, uint8_t *T, size_t tlen, uint8_t *C)
@@ -58,14 +61,13 @@ static inline void hctr2enc512(aes_context* aesctx, hctr2_context* ctx, uint8_t 
     uint8_t *N = P + ctx->blocklength;
     uint8_t *V = C + ctx->blocklength;
 
-    tmp0 = hash512x4(ctx, N, nlen, T, tlen);
+    tmp0 = hash512(ctx, N, nlen, T, tlen);
     tmp0 = _mm512_xor_si512(M, tmp0);
     tmp1 = aesenc512(tmp0, aesctx->keys);
     tmp0 = _mm512_xor_si512(tmp0, tmp1);
     tmp0 = _mm512_xor_si512(tmp0, L);
     tmp0 = _mm512_broadcast_i64x2(((__m128i *)&tmp0)[0]);
-    xctrxoradd512(aesctx, ctx, tmp0, nlen, N, V);
-    tmp0 = hash512x4(ctx, V, nlen, T, tlen);
+    tmp0 = xctrxoradd_hash512(aesctx, ctx, tmp0, nlen, N, V, T, tlen);
     tmp0 = _mm512_xor_si512(tmp0, tmp1);
     _mm_storeu_si128((__m128i *)C, _mm512_castsi512_si128(tmp0));
 }
@@ -80,13 +82,13 @@ static inline void hctr2enc512p(aes_context* aesctx, hctr2_context* ctx, uint8_t
     uint8_t *N = P + ctx->blocklength;
     uint8_t *V = C + ctx->blocklength;
 
-    tmp0 = hash512x4(ctx, N, nlen, T, tlen);
+    tmp0 = hash512(ctx, N, nlen, T, tlen);
     tmp0 = _mm512_xor_si512(M, tmp0);
     tmp1 = aesenc512(tmp0, aesctx->keys);
     tmp0 = _mm512_xor_si512(tmp0, tmp1);
     tmp0 = _mm512_xor_si512(tmp0, L);
     tmp0 = _mm512_broadcast_i64x2(((__m128i *)&tmp0)[0]);
-    tmp0 = xctrxoradd_hash512x4(aesctx, ctx, tmp0, nlen, N, V, T, tlen);
+    tmp0 = xctrxoradd_hash512(aesctx, ctx, tmp0, nlen, N, V, T, tlen);
     tmp0 = _mm512_xor_si512(tmp0, tmp1);
     _mm_storeu_si128((__m128i *)C, _mm512_castsi512_si128(tmp0));
 }

@@ -5,13 +5,13 @@ pmac_context ctx;
 
 static inline void wrapper_pmacx4(measurement_context measure_ctx)
 {
-	alignas(16) __m128i tag = pmac128x4(aesctx, ctx, measure_ctx.pt.head, measure_ctx.pt.size);
+	alignas(16) __m128i tag = pmac128x4(&aesctx, &ctx, measure_ctx.pt.head, measure_ctx.pt.size);
 	_mm_storeu_si128((__m128i *)measure_ctx.ct.head, tag);
 }
 
 static inline void wrapper_pmacx8(measurement_context measure_ctx)
 {
-	alignas(16) __m128i tag = pmac128x8(aesctx, ctx, measure_ctx.pt.head, measure_ctx.pt.size);
+	alignas(16) __m128i tag = pmac128x8(&aesctx, &ctx, measure_ctx.pt.head, measure_ctx.pt.size);
 	_mm_storeu_si128((__m128i *)measure_ctx.ct.head, tag);
 }
 

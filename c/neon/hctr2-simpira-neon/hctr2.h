@@ -7,12 +7,12 @@
 
 void init_htbl128(hctr2_context *ctx, __m128i *H)
 {
-    ctx->htbl[0] = polydot128(ctx->poly, H[0], _mm_setr_epi32(2, 0, 0, 0));
-    ctx->htbl[4] = polydot128(ctx->poly, H[1], _mm_setr_epi32(2, 0, 0, 0));
-    for (size_t i = 1; i < 4; i++)
+    ctx->htbl[0] = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
+    ctx->htbl[16] = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
+    for (size_t i = 1; i < 16; i++)
     {
         ctx->htbl[i] = polydot128(ctx->poly, ctx->htbl[i - 1], H[0]);
-        ctx->htbl[i + 4] = polydot128(ctx->poly, ctx->htbl[i + 4 - 1], H[1]);
+        ctx->htbl[i + 16] = polydot128(ctx->poly, ctx->htbl[i + 16 - 1], H[1]);
     }
 }
 
@@ -20,11 +20,15 @@ void hctr2init128(hctr2_context *ctx, uint8_t *key)
 {
     ctx->poly = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
 
+    simpira_b2_init(&(ctx->simpira_ctx));
+
     ctx->key[0] = _mm_loadu_si128((__m128i *)key);
     ctx->key[1] = _mm_loadu_si128((__m128i *)key + 1);
+    ctx->simpira_ctx.keys[0] = ctx->key[0];
+    ctx->simpira_ctx.keys[1] = ctx->key[1];
 
-    ctx->L[0] = _mm_setr_epi32(0, 0, 0, 0);
-    ctx->L[1] = _mm_setr_epi32(1, 0, 0, 0);
+    ctx->L[0] = _mm_setr_epi32(1, 0, 0, 0);
+    ctx->L[1] = _mm_setr_epi32(0, 0, 0, 0);
 
     ctx->L[0] = _mm_xor_si128(ctx->L[0], ctx->key[0]);
     ctx->L[1] = _mm_xor_si128(ctx->L[1], ctx->key[1]);
@@ -44,7 +48,7 @@ void hctr2init128(hctr2_context *ctx, uint8_t *key)
 
 static inline void hctr2enc128x4(hctr2_context ctx, uint8_t *T, size_t Tlen, uint8_t *P, size_t Mlen, uint8_t *C)
 {
-    size_t Nlen = (Mlen - 32) > 0 ? Mlen - 32 : 0;
+    size_t Nlen = Mlen > 32 ? Mlen - 32 : 0;
     alignas(16) __m128i tmps[12];
 
     alignas(16) __m128i M[2];
@@ -60,7 +64,7 @@ static inline void hctr2enc128x4(hctr2_context ctx, uint8_t *T, size_t Tlen, uin
     __m128i *S = tmps + 8;
     __m128i *U = tmps + 10;
 
-    tweakhash128n2x4(ctx, Nlen % 16 > 0, T, Tlen, state);
+    tweakhash128n2x4(ctx, Nlen % 32 > 0, T, Tlen, state);
 
     hash128x4(ctx, state, N, Nlen, hash);
 
@@ -90,7 +94,7 @@ static inline void hctr2enc128x4(hctr2_context ctx, uint8_t *T, size_t Tlen, uin
 
 static inline void hctr2enc128x8(hctr2_context ctx, uint8_t *T, size_t Tlen, uint8_t *P, size_t Mlen, uint8_t *C)
 {
-    size_t Nlen = (Mlen - 32) > 0 ? Mlen - 32 : 0;
+    size_t Nlen = Mlen > 32 ? Mlen - 32 : 0;
     alignas(16) __m128i tmps[12];
 
     alignas(16) __m128i M[2];
@@ -106,7 +110,7 @@ static inline void hctr2enc128x8(hctr2_context ctx, uint8_t *T, size_t Tlen, uin
     __m128i *S = tmps + 8;
     __m128i *U = tmps + 10;
 
-    tweakhash128n2x8(ctx, Nlen % 16 > 0, T, Tlen, state);
+    tweakhash128n2x8(ctx, Nlen % 32 > 0, T, Tlen, state);
 
     hash128x8(ctx, state, N, Nlen, hash);
 
@@ -136,7 +140,7 @@ static inline void hctr2enc128x8(hctr2_context ctx, uint8_t *T, size_t Tlen, uin
 
 void hctr2dec128(aes_context aesctx, hctr2_context ctx, uint8_t *T, size_t Tlen, uint8_t *C, size_t Clen, uint8_t *P)
 {
-    size_t Vlen = (Clen - 32) > 0 ? Clen - 32 : 0;
+    size_t Vlen = Clen > 32 ? Clen - 32 : 0;
     alignas(16) __m128i tmps[12];
 
     alignas(16) __m128i U[2];
@@ -152,7 +156,7 @@ void hctr2dec128(aes_context aesctx, hctr2_context ctx, uint8_t *T, size_t Tlen,
     __m128i *S = tmps + 8;
     __m128i *M = tmps + 10;
 
-    tweakhash128n2x4(ctx, Vlen % 16 > 0, T, Tlen, state);
+    tweakhash128n2x4(ctx, Vlen % 32 > 0, T, Tlen, state);
 
     hash128x4(ctx, state, V, Vlen, hash);
 

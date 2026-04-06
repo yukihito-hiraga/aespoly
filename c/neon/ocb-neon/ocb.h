@@ -159,7 +159,7 @@ static inline __m128i ocbhash128x4(ocb_context ctx, size_t plen, const uint8_t *
 		Li = ctx.L[_tzcnt_u64(4 * bx4len + i + 1)];
 		offset = _mm_xor_si128(offset, Li);
 
-		_data1 = _mm_loadu_si128((__m128i *)P + 4 * i + 0);
+		_data1 = _mm_loadu_si128((__m128i *)P + bx4len * 4 + i);
 		data1 = _mm_xor_si128(_data1, offset);
 		data1 = aesenc128(data1, ctx.aesctx.keys128);
 		sum = _mm_xor_si128(sum, data1);
@@ -169,7 +169,7 @@ static inline __m128i ocbhash128x4(ocb_context ctx, size_t plen, const uint8_t *
 	{
 		offset = _mm_xor_si128(offset, ctx.L_star);
 		data = ozp128(brem, P + plen - brem);
-		tmp = _mm_xor_si128(tmp, offset);
+		tmp = _mm_xor_si128(data, offset);
 		tmp = aesenc128(tmp, ctx.aesctx.keys128);
 		sum = _mm_xor_si128(tmp, sum);
 	}
@@ -207,6 +207,12 @@ static inline __m128i gen_offset0(ocb_context ctx, size_t tlen, size_t nlen, con
 	}
 	return _mm_loadu_si128((__m128i *)(stretch + bbtm));
 }
+
+static inline void ocbenc128x4_offline(ocb_context ctx, size_t tlen,
+				       const uint8_t *N, size_t nlen,
+				       const uint8_t *A, size_t alen,
+				       const uint8_t *P, size_t plen,
+				       uint8_t *C);
 
 static inline void ocbenc128(ocb_context ctx, size_t tlen, const uint8_t *N, size_t nlen, const uint8_t *A, size_t alen, const uint8_t *P, size_t plen, uint8_t *C)
 {
@@ -308,12 +314,13 @@ static inline void ocbenc128_offline(ocb_context ctx, size_t tlen, const uint8_t
 static inline void ocbenc128x4(ocb_context ctx, size_t tlen, const uint8_t *N, size_t nlen, const uint8_t *A, size_t alen, const uint8_t *P, size_t plen, uint8_t *C)
 {
 	alignas(16) __m128i checksum = _mm_setzero_si128();
-
+	alignas(16) __m128i Li, offset;
 	alignas(16) __m128i offsets[4];
 	alignas(16) __m128i data[4];
 	alignas(16) __m128i tmps[4];
 
-	offsets[0] = _mm_xor_si128(gen_offset0(ctx, tlen, nlen, N), ctx.L[0]);
+	offsets[0] = gen_offset0(ctx, tlen, nlen, N);
+	offset = offsets[0];
 
 	for (size_t i = 1; i < 4; i++)
 	{
@@ -328,8 +335,9 @@ static inline void ocbenc128x4(ocb_context ctx, size_t tlen, const uint8_t *N, s
 
 	for (size_t i = 0; i < bx4len; i++)
 	{
+		seq_graycode_x4_online(offsets, ctx, offset, i);
+
 		loadx4((__m128i *)P + 4 * i, data);
-		seq_graycode_x4_online(offsets, ctx, 0, i);
 
 		xorx4_1wise(data, offsets, tmps);
 
@@ -339,32 +347,34 @@ static inline void ocbenc128x4(ocb_context ctx, size_t tlen, const uint8_t *N, s
 
 		storex4((__m128i *)C + 4 * i, tmps);
 
-		sum_x4(tmps, checksum);
+		sum_x4(data, checksum);
 	}
 
 	for (size_t i = 0; i < bx4rem; i++)
 	{
-		seq_graycode_x1_online(offsets, ctx, 4*bx4len+i);
+		offsets[0] = offset;
+		seq_graycode_x1_online(offsets, ctx, 4 * bx4len + i);
+		offset = offsets[0];
 		data[0] = _mm_loadu_si128((__m128i *)P + bx4len * 4 + i);
-		tmps[0] = _mm_xor_si128(data[0], offsets[0]);
+		tmps[0] = _mm_xor_si128(data[0], offset);
 		tmps[0] = aesenc128(tmps[0], ctx.aesctx.keys128);
-		tmps[0] = _mm_xor_si128(tmps[0], offsets[0]);
+		tmps[0] = _mm_xor_si128(tmps[0], offset);
 		_mm_storeu_si128((__m128i *)C + bx4len * 4 + i, tmps[0]);
 
-		checksum = _mm_xor_si128(checksum, tmps[0]);
+		checksum = _mm_xor_si128(checksum, data[0]);
 	}
 
 	if (brem > 0)
 	{
-		offsets[0] = _mm_xor_si128(offsets[0], ctx.L_star);
+		offset = _mm_xor_si128(offset, ctx.L_star);
 		data[0] = ozp128(brem, P + plen - brem);
-		tmps[0] = aesenc128(offsets[0], ctx.aesctx.keys128);
+		tmps[0] = aesenc128(offset, ctx.aesctx.keys128);
 		tmps[0] = _mm_xor_si128(data[0], tmps[0]);
 		memcpy(C + plen - brem, ((uint8_t *)&tmps), brem);
-		checksum = _mm_xor_si128(checksum, tmps[0]);
+		checksum = _mm_xor_si128(checksum, data[0]);
 	}
 
-	tmps[0] = _mm_xor_si128(ctx.L_dollar, offsets[0]);
+	tmps[0] = _mm_xor_si128(ctx.L_dollar, offset);
 	tmps[0] = _mm_xor_si128(checksum, tmps[0]);
 
 	alignas(16) __m128i tag = aesenc128(tmps[0], ctx.aesctx.keys128);
@@ -381,13 +391,14 @@ static inline void ocbenc128x4(ocb_context ctx, size_t tlen, const uint8_t *N, s
 static inline void ocbenc128x4_offline(ocb_context ctx, size_t tlen, const uint8_t *N, size_t nlen, const uint8_t *A, size_t alen, const uint8_t *P, size_t plen, uint8_t *C)
 {
 	alignas(16) __m128i checksum = _mm_setzero_si128();
-	alignas(16) __m128i Li;
+	alignas(16) __m128i Li, offset;
 
 	alignas(16) __m128i offsets[4];
 	alignas(16) __m128i data[4];
 	alignas(16) __m128i tmps[4];
 
 	offsets[0] = gen_offset0(ctx, tlen, nlen, N);
+	offset = offsets[0];
 
 	for (size_t i = 1; i < 4; i++)
 	{
@@ -400,7 +411,7 @@ static inline void ocbenc128x4_offline(ocb_context ctx, size_t tlen, const uint8
 	size_t bx4len = blen / 4;
 	size_t bx4rem = blen % 4;
 
-	Li = ctx.L[1];
+	Li = ctx.L[3];
 
 	for (size_t i = 0; i < bx4len; i++)
 	{
@@ -415,34 +426,32 @@ static inline void ocbenc128x4_offline(ocb_context ctx, size_t tlen, const uint8
 
 		storex4((__m128i *)C + 4 * i, tmps);
 
-		sum_x4(tmps, checksum);
+		sum_x4(data, checksum);
 	}
 
 	for (size_t i = 0; i < bx4rem; i++)
 	{
-		seq_graycode_x1(offsets, ctx.L, 4*bx4len+i);
+		offset = _mm_xor_si128(offset, ctx.L[_tzcnt_u64(4 * bx4len + i + 1)]);
 		data[0] = _mm_loadu_si128((__m128i *)P + bx4len * 4 + i);
-		tmps[0] = _mm_xor_si128(data[0], offsets[0]);
+		tmps[0] = _mm_xor_si128(data[0], offset);
 		tmps[0] = aesenc128(tmps[0], ctx.aesctx.keys128);
-		tmps[0] = _mm_xor_si128(tmps[0], offsets[0]);
+		tmps[0] = _mm_xor_si128(tmps[0], offset);
 		_mm_storeu_si128((__m128i *)C + bx4len * 4 + i, tmps[0]);
 
-		checksum = _mm_xor_si128(checksum, tmps[0]);
+		checksum = _mm_xor_si128(checksum, data[0]);
 	}
 
 	if (brem > 0)
 	{
-		offsets[0] = _mm_xor_si128(offsets[0], ctx.L_star);
+		offset = _mm_xor_si128(offset, ctx.L_star);
 		data[0] = ozp128(brem, P + plen - brem);
-		tmps[0] = aesenc128(offsets[0], ctx.aesctx.keys128);
+		tmps[0] = aesenc128(offset, ctx.aesctx.keys128);
 		tmps[0] = _mm_xor_si128(data[0], tmps[0]);
 		memcpy(C + plen - brem, ((uint8_t *)&tmps), brem);
-		checksum = _mm_xor_si128(checksum, tmps[0]);
+		checksum = _mm_xor_si128(checksum, data[0]);
 	}
 
-	//myprint_m128(offsets[0], "offset");
-
-	tmps[0] = _mm_xor_si128(ctx.L_dollar, offsets[0]);
+	tmps[0] = _mm_xor_si128(ctx.L_dollar, offset);
 	tmps[0] = _mm_xor_si128(checksum, tmps[0]);
 
 	alignas(16) __m128i tag = aesenc128(tmps[0], ctx.aesctx.keys128);
@@ -458,13 +467,14 @@ static inline void ocbenc128x4_offline(ocb_context ctx, size_t tlen, const uint8
 static inline void ocbenc128x8_offline(ocb_context ctx, size_t tlen, const uint8_t *N, size_t nlen, const uint8_t *A, size_t alen, const uint8_t *P, size_t plen, uint8_t *C)
 {
 	alignas(16) __m128i checksum = _mm_setzero_si128();
-	alignas(16) __m128i Li;
+	alignas(16) __m128i Li, offset;
 
 	alignas(16) __m128i offsets[8];
 	alignas(16) __m128i data[8];
 	alignas(16) __m128i tmps[8];
 
 	offsets[0] = gen_offset0(ctx, tlen, nlen, N);
+	offset = offsets[0];
 
 	for (size_t i = 1; i < 8; i++)
 	{
@@ -482,7 +492,7 @@ static inline void ocbenc128x8_offline(ocb_context ctx, size_t tlen, const uint8
 	for (size_t i = 0; i < bx8len; i++)
 	{
 		loadx8((__m128i *)P + 8 * i, data);
-		seq_graycode_x8(offsets, ctx.L, ctx.L[1], Li, i);
+			seq_graycode_x8(offsets, ctx.L, ctx.L[2], Li, i);
 
 		xorx8_1wise(data, offsets, tmps);
 
@@ -490,36 +500,34 @@ static inline void ocbenc128x8_offline(ocb_context ctx, size_t tlen, const uint8
 
 		xorx8_1wise(tmps, offsets, tmps);
 
-		storex8((__m128i *)C + 4 * i, tmps);
+		storex8((__m128i *)C + 8 * i, tmps);
 
-		sum_x8(tmps, checksum);
+		sum_x8(data, checksum);
 	}
 
 	for (size_t i = 0; i < bx8rem; i++)
 	{
-		seq_graycode_x1(offsets, ctx.L, 8*bx8len+i);
+		offset = _mm_xor_si128(offset, ctx.L[_tzcnt_u64(8 * bx8len + i + 1)]);
 		data[0] = _mm_loadu_si128((__m128i *)P + bx8len * 8 + i);
-		tmps[0] = _mm_xor_si128(data[0], offsets[0]);
+		tmps[0] = _mm_xor_si128(data[0], offset);
 		tmps[0] = aesenc128(tmps[0], ctx.aesctx.keys128);
-		tmps[0] = _mm_xor_si128(tmps[0], offsets[0]);
+		tmps[0] = _mm_xor_si128(tmps[0], offset);
 		_mm_storeu_si128((__m128i *)C + bx8len * 8 + i, tmps[0]);
 
-		checksum = _mm_xor_si128(checksum, tmps[0]);
+		checksum = _mm_xor_si128(checksum, data[0]);
 	}
 
 	if (brem > 0)
 	{
-		offsets[0] = _mm_xor_si128(offsets[0], ctx.L_star);
+		offset = _mm_xor_si128(offset, ctx.L_star);
 		data[0] = ozp128(brem, P + plen - brem);
-		tmps[0] = aesenc128(offsets[0], ctx.aesctx.keys128);
+		tmps[0] = aesenc128(offset, ctx.aesctx.keys128);
 		tmps[0] = _mm_xor_si128(data[0], tmps[0]);
 		memcpy(C + plen - brem, ((uint8_t *)&tmps), brem);
-		checksum = _mm_xor_si128(checksum, tmps[0]);
+		checksum = _mm_xor_si128(checksum, data[0]);
 	}
 
-	//myprint_m128(offsets[0], "offset");
-
-	tmps[0] = _mm_xor_si128(ctx.L_dollar, offsets[0]);
+	tmps[0] = _mm_xor_si128(ctx.L_dollar, offset);
 	tmps[0] = _mm_xor_si128(checksum, tmps[0]);
 
 	alignas(16) __m128i tag = aesenc128(tmps[0], ctx.aesctx.keys128);

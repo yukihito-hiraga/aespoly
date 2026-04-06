@@ -8,7 +8,7 @@
 void init_htbl128(hctr2_context *ctx, __m128i H)
 {
     ctx->htbl[0] = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
-    for (size_t i = 1; i < 5; i++)
+    for (size_t i = 1; i < 9; i++)
     {
         ctx->htbl[i] = polydot128(*ctx, ctx->htbl[i - 1], H);
     }
@@ -16,6 +16,8 @@ void init_htbl128(hctr2_context *ctx, __m128i H)
 
 void hctr2init128(aes_context *aesctx, hctr2_context *ctx, uint8_t *key)
 {
+    ctx->blocklength = 16;
+    ctx->poly = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
     aesctx->keys128[0] = _mm_loadu_si128((__m128i *)key);
     aesctx->keys128[1] = aeskeyex128(aesctx->keys128[0], 0x01);
     aesctx->keys128[2] = aeskeyex128(aesctx->keys128[1], 0x02);
@@ -48,13 +50,13 @@ static inline void hctr2enc128(aes_context aesctx, hctr2_context ctx, uint8_t *P
     uint8_t *N = P + ctx.blocklength;
     uint8_t *V = C + ctx.blocklength;
 
-    tmp0 = hash128x8(ctx, N, nlen, T, tlen);
+    tmp0 = hash128(ctx, N, nlen, T, tlen);
     tmp0 = _mm_xor_si128(M, tmp0);
     tmp1 = aesenc128(tmp0, aesctx.keys128);
     tmp0 = _mm_xor_si128(tmp0, tmp1);
     tmp0 = _mm_xor_si128(tmp0, L);
     xctrxoradd128(aesctx, ctx, tmp0, nlen, N, V);
-    tmp0 = hash128x8(ctx, V, nlen, T, tlen);
+    tmp0 = hash128(ctx, V, nlen, T, tlen);
     tmp0 = _mm_xor_si128(tmp0, tmp1);
     _mm_storeu_si128((__m128i *)C, tmp0);
 }

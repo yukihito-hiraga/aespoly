@@ -1,0 +1,1463 @@
+#pragma once
+#include "core.h"
+#include <stdlib.h>
+
+static inline __m128i polyreduce128(__m128i poly, __m128i x)
+{
+	alignas(16) __m128i x0 = _mm_clmulepi64_si128(x, poly, 0x10);
+	alignas(16) __m128i y0 = _mm_shuffle_epi32(x, 78);
+	alignas(16) __m128i y1 = _mm_xor_si128(y0, x0);
+	alignas(16) __m128i x1 = _mm_clmulepi64_si128(y1, poly, 0x10);
+	alignas(16) __m128i y2 = _mm_shuffle_epi32(y1, 78);
+	return _mm_xor_si128(y2, x1);
+}
+
+static inline __m128i polydot128(__m128i poly, __m128i a, __m128i b)
+{
+	alignas(16) __m128i pp00 = _mm_clmulepi64_si128(a, b, 0x00);
+	alignas(16) __m128i pp11 = _mm_clmulepi64_si128(a, b, 0x11);
+	alignas(16) __m128i pp10 = _mm_clmulepi64_si128(a, b, 0x01);
+	alignas(16) __m128i pp01 = _mm_clmulepi64_si128(a, b, 0x10);
+
+	alignas(16) __m128i ppmid = _mm_xor_si128(pp10, pp01);
+	alignas(16) __m128i ppmid_ls = _mm_bslli_si128(ppmid, 8);
+	alignas(16) __m128i ppmid_rs = _mm_bsrli_si128(ppmid, 8);
+	alignas(16) __m128i ppupper = _mm_xor_si128(ppmid_rs, pp11);
+	alignas(16) __m128i pplower = _mm_xor_si128(ppmid_ls, pp00);
+	alignas(16) __m128i ppl_reduced = polyreduce128(poly, pplower);
+	return _mm_xor_si128(ppupper, ppl_reduced);
+}
+
+static inline __m128i double128(__m128i poly, __m128i x)
+{
+	alignas(16) __m128i y;
+	alignas(16) __m128i c = _mm_srli_epi64(x, 63);
+	alignas(16) __m128i m0 = _mm_setr_epi32(1, 0, 0, 0);
+	alignas(16) __m128i m1 = _mm_setr_epi32(0, 0, 1, 0);
+	alignas(16) __m128i c0 = _mm_and_si128(c, m0);
+	c0 = _mm_bslli_si128(c0, 8);
+	alignas(16) __m128i c1 = _mm_and_si128(c, m1);
+	c1 = _mm_bsrli_si128(c1, 8);
+	y = _mm_slli_epi64(x, 1);
+	y = _mm_xor_si128(y, c0);
+	alignas(16) __m128i z = poly;
+	z = _mm_clmulepi64_si128(c1, z, 0);
+	y = _mm_xor_si128(y, z);
+	return y;
+}
+
+static inline __m128i mul2_xex(__m128i pp, __m128i X)
+{
+	__m128i tmp1, tmp2, tmp3, tmp4, tmp5;
+
+	tmp1 = _mm_slli_epi32(X, 1);
+	tmp2 = _mm_srli_epi32(X, 31);
+	tmp3 = _mm_slli_si128(tmp2, 4);
+	X = _mm_xor_si128(tmp1, tmp3);
+	tmp4 = _mm_srli_si128(tmp2, 12);
+	tmp5 = _mm_shuffle_epi8(pp, tmp4);
+	X = _mm_xor_si128(X, tmp5);
+	return X;
+}
+
+#define mul2rev_xex(pp, X) byterev(mul2_xex(pp, byterev(X)))
+
+static inline void mul2_xex_256(__m128i *dst, const __m128i *src)
+{
+	alignas(16) uint8_t in[32];
+	alignas(16) uint8_t out[32];
+	_mm_storeu_si128((__m128i *)in, src[0]);
+	_mm_storeu_si128((__m128i *)(in + 16), src[1]);
+	uint8_t cond = in[31] & 0x80;
+	for (size_t i = 0; i < 31; i++)
+	{
+		out[i] = (uint8_t)((in[i] << 1) | (in[i + 1] >> 7));
+	}
+	out[31] = (uint8_t)(in[31] << 1);
+	if (cond)
+	{
+		out[31] ^= 0x87;
+	}
+	dst[0] = _mm_loadu_si128((__m128i *)out);
+	dst[1] = _mm_loadu_si128((__m128i *)(out + 16));
+}
+
+static inline void init_htbl128(__m128i *htbl, __m128i poly, __m128i *H)
+{
+	htbl[0] = H[0];
+	htbl[16] = H[1];
+	for (size_t i = 1; i < 16; i++)
+	{
+		htbl[i] = polydot128(poly, htbl[i - 1], H[0]);
+		htbl[i + 16] = polydot128(poly, htbl[i + 16 - 1], H[1]);
+	}
+}
+
+static inline void phash(aespolyW_context ctx, const uint8_t *M, size_t Mlen, __m128i *sum)
+{
+	size_t blen = Mlen / 32;
+	size_t brem = Mlen % 32;
+
+	alignas(16) __m128i data[2];
+	sum[0] = _mm_setzero_si128();
+	sum[1] = _mm_setzero_si128();
+
+	for (size_t i = 0; i < blen; i++)
+	{
+		data[0] = _mm_loadu_si128((__m128i *)M + 2 * i);
+		data[1] = _mm_loadu_si128((__m128i *)M + 2 * i + 1);
+		data[0] = _mm_xor_si128(data[0], ctx.L[2 * (i + 1)]);
+		data[1] = _mm_xor_si128(data[1], ctx.L[2 * (i + 1) + 1]);
+		rijndael256x1(ctx.rijndael256ctx, data, data);
+		sum[0] = _mm_xor_si128(sum[0], data[0]);
+		sum[1] = _mm_xor_si128(sum[1], data[1]);
+	}
+
+	if (brem)
+	{
+		uint8_t padded[32];
+		memset(padded, 0, 32);
+		memcpy(padded, M + 32 * blen, brem);
+		padded[brem] = 0x80;
+		data[0] = _mm_loadu_si128((__m128i *)padded);
+		data[1] = _mm_loadu_si128((__m128i *)padded + 1);
+		data[0] = _mm_xor_si128(data[0], ctx.L[2 * blen + 2]);
+		data[1] = _mm_xor_si128(data[1], ctx.L[2 * blen + 3]);
+		rijndael256x1(ctx.rijndael256ctx, data, data);
+		sum[0] = _mm_xor_si128(sum[0], data[0]);
+		sum[1] = _mm_xor_si128(sum[1], data[1]);
+	}
+}
+
+static inline void tweaker_scalar(aespolyW_context ctx, bool mln,
+								  const uint8_t *T, size_t Tlen, __m128i *state)
+{
+	alignas(16) __m128i X[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) uint8_t lenblk[32] = {0};
+	uint64_t lenv = (uint64_t)(16 * Tlen + 2 + (mln ? 1 : 0));
+	memcpy(lenblk, &lenv, sizeof(lenv));
+	__m128i len0 = _mm_loadu_si128((__m128i *)lenblk);
+	__m128i len1 = _mm_loadu_si128((__m128i *)lenblk + 1);
+	X[0] = _mm_xor_si128(X[0], len0);
+	X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+	X[0] = _mm_xor_si128(X[0], len1);
+	X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+	X[1] = _mm_xor_si128(X[1], len0);
+	X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	X[1] = _mm_xor_si128(X[1], len1);
+	X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+
+	size_t blen = Tlen / 32;
+	size_t rem = Tlen % 32;
+	for (size_t i = 0; i < blen; i++)
+	{
+		__m128i blk0 = _mm_loadu_si128((__m128i *)T + 2 * i);
+		__m128i blk1 = _mm_loadu_si128((__m128i *)T + 2 * i + 1);
+		X[0] = _mm_xor_si128(X[0], blk0);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], blk1);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], blk0);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], blk1);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+
+	if (rem > 0)
+	{
+		uint8_t padded[32];
+		memset(padded, 0, 32);
+		memcpy(padded, T + 32 * blen, rem);
+		__m128i blk0 = _mm_loadu_si128((__m128i *)padded);
+		__m128i blk1 = _mm_loadu_si128((__m128i *)padded + 1);
+		X[0] = _mm_xor_si128(X[0], blk0);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], blk1);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], blk0);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], blk1);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+
+	state[0] = X[0];
+	state[1] = X[1];
+}
+
+#define tweaker_round(dataL, dataR, tmpsL, tmpsR, ctx, htbl, n, i) \
+	{                                                              \
+		rijndael256_roundx4(ctx, 4 * i + 1, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i);                   \
+		rijndael256_roundx4(ctx, 4 * i + 2, tmpsR);                \
+		rijndael256_roundx4(ctx, 4 * i + 3, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i + 1);               \
+		rijndael256_roundx4(ctx, 4 * i + 4, tmpsR);                \
+	}
+
+static inline void tweaker(aespolyW_context ctx, bool mln, const uint8_t *T, size_t Tlen, __m128i *state, __m128i *hash)
+{
+	size_t m = (Tlen + 31) / 32;
+	size_t rem = Tlen + 32 - m * 32;
+	size_t dlen = MAX(m - m % 2 - 2, 0) / 2;
+	size_t dx4rem = dlen % 4;
+	size_t dx4len = dlen / 4;
+
+	alignas(16) __m128i data[32];
+	alignas(16) __m128i tmps[48];
+
+	alignas(16) __m128i omegai[2];
+
+	__m128i *dataL = data;
+	__m128i *dataR = data + 16;
+
+	__m128i *tmpsL = tmps;
+	__m128i *tmpsR = tmps + 16;
+	__m128i *mask = tmps + 32;
+
+	setzero_x16(mask);
+
+	alignas(16) __m128i X[2];
+	X[0] = _mm_setr_epi64(_m_from_int64(2 * Tlen + 2 + mln), _m_from_int64(0));
+	X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+	X[1] = X[0];
+	alignas(16) __m128i Y[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) __m128i Z[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+
+	alignas(16) __m128i sum[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+
+	if (Tlen < 32)
+	{
+		state[0] = X[0];
+		state[1] = X[1];
+		hash[0] = _mm_setzero_si128();
+		hash[1] = _mm_setzero_si128();
+		return;
+	}
+
+	copyx2(ctx.omega + 6, omegai);
+
+	for (size_t i = 0; i < dx4len; i++)
+	{
+		gather_load_n2x4((__m128i *)T + 16 * i + 1, dataL);
+		gather_load_n2x4((__m128i *)T + 16 * i, dataR);
+
+		seq_graycode_n2x4(mask, ctx.omega, ctx.omega + 2, omegai, i);
+
+		Y[0] = polyreduce128(ctx.poly, Y[0]);
+		Y[1] = polyreduce128(ctx.poly, Y[1]);
+		Z[0] = _mm_xor_si128(X[0], Y[0]);
+		Z[1] = _mm_xor_si128(X[1], Y[1]);
+		Z[0] = _mm_xor_si128(Z[0], dataL[0]);
+		Z[1] = _mm_xor_si128(Z[1], dataL[1]);
+
+		xorx8_1wise(dataR, mask, tmpsR);
+		addkey256x4(ctx.rijndael256ctx.keys128, tmpsR, tmpsR);
+
+		rijndael256_roundx4(ctx.rijndael256ctx, 1, tmpsR);
+		mulinit_n2(dataL, ctx.htbl, tmpsL, 8);
+		rijndael256_roundx4(ctx.rijndael256ctx, 2, tmpsR);
+		rijndael256_roundx4(ctx.rijndael256ctx, 3, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 8, 1);
+		rijndael256_roundx4(ctx.rijndael256ctx, 4, tmpsR);
+
+		tweaker_round(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 1);
+		tweaker_round(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 2);
+
+		rijndael256_roundx4(ctx.rijndael256ctx, 13, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 8, 6);
+		rijndael256_lastroundx4(ctx.rijndael256ctx, tmpsR);
+		muladdlast_n2(Z, ctx.htbl, tmpsL, 8);
+
+		sum_n2x4(tmpsR, sum);
+
+		tmpsL[3] = _mm_bsrli_si128(tmpsL[2], 8);
+		tmpsL[2] = _mm_bslli_si128(tmpsL[2], 8);
+
+		tmpsL[4 + 3] = _mm_bsrli_si128(tmpsL[4 + 2], 8);
+		tmpsL[4 + 2] = _mm_bslli_si128(tmpsL[4 + 2], 8);
+
+		X[0] = _mm_xor_si128(tmpsL[3], tmpsL[1]);
+		Y[0] = _mm_xor_si128(tmpsL[0], tmpsL[2]);
+
+		X[1] = _mm_xor_si128(tmpsL[4 + 3], tmpsL[4 + 1]);
+		Y[1] = _mm_xor_si128(tmpsL[4 + 0], tmpsL[4 + 2]);
+	}
+	Y[0] = polyreduce128(ctx.poly, Y[0]);
+	Z[0] = _mm_xor_si128(X[0], Y[0]);
+	X[0] = Z[0];
+
+	Y[1] = polyreduce128(ctx.poly, Y[1]);
+	Z[1] = _mm_xor_si128(X[1], Y[1]);
+	X[1] = Z[1];
+	for (size_t i = 0; i < dx4rem; i++)
+	{
+		gather_load_n2x1((__m128i *)T + 16 * dx4len + 4 * i + 1, dataL);
+		gather_load_n2x1((__m128i *)T + 16 * dx4len + 4 * i, dataR);
+
+		seq_graycode_n2x1(mask, ctx.L, dx4len * 4 + i);
+
+		xorx2_1wise(dataR, mask, tmpsR);
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+
+		sum[0] = _mm_xor_si128(sum[0], tmpsR[0]);
+		sum[1] = _mm_xor_si128(sum[1], tmpsR[1]);
+
+		X[0] = _mm_xor_si128(X[0], dataL[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], dataL[1]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], dataL[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], dataL[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+
+	if (Tlen == 32)
+	{
+		state[0] = X[0];
+		state[1] = X[1];
+		hash[0] = _mm_loadu_si128((__m128i *)T);
+		hash[1] = _mm_loadu_si128((__m128i *)T + 1);
+	}
+	else
+	{
+		if (m % 2 == 0)
+		{
+			data[0] = _mm_loadu_si128((__m128i *)T + dlen * 4);
+			data[1] = _mm_loadu_si128((__m128i *)T + dlen * 4);
+
+			uint8_t padded[32];
+			memset(padded, 0, 32);
+			memcpy(padded, T + Tlen - rem, rem);
+			// padded[rem] = 0x80;
+			alignas(16) __m128i paddedblk[2];
+			paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
+			paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+			seq_graycode_n2x1(mask, ctx.L, dlen);
+
+			xorx2_1wise(data, mask, tmpsR);
+			rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+
+			hash[0] = _mm_xor_si128(sum[0], tmpsR[0]);
+			hash[1] = _mm_xor_si128(sum[1], tmpsR[1]);
+
+			X[0] = _mm_xor_si128(X[0], paddedblk[0]);
+			state[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+			X[0] = _mm_xor_si128(X[0], paddedblk[1]);
+			state[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+			X[1] = _mm_xor_si128(X[1], paddedblk[0]);
+			state[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+			X[1] = _mm_xor_si128(X[1], paddedblk[1]);
+			state[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+		}
+		else
+		{
+			data[0] = _mm_loadu_si128((__m128i *)T + dlen * 2);
+			data[1] = _mm_loadu_si128((__m128i *)T + dlen * 2 + 1);
+			data[2] = _mm_loadu_si128((__m128i *)(T + Tlen - 32));
+			data[3] = _mm_loadu_si128((__m128i *)(T + Tlen - 32) + 1);
+
+			uint8_t padded[32];
+			memset(padded, 0, 32);
+			memcpy(padded, T + Tlen - 32 - rem, rem);
+			// padded[rem] = 0x80;
+			alignas(16) __m128i paddedblk[2];
+			paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
+			paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+			seq_graycode_n2x1(mask, ctx.L, dlen);
+
+			xorx2_1wise(data, mask, tmpsR);
+			rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+			sum[0] = _mm_xor_si128(sum[0], tmps[0]);
+			sum[1] = _mm_xor_si128(sum[1], tmps[1]);
+
+			seq_graycode_n2x1(mask, ctx.L, dlen + 1);
+
+			xorx2_1wise(data + 2, mask, tmpsR);
+			rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+			sum[0] = _mm_xor_si128(sum[0], tmps[0]);
+			sum[1] = _mm_xor_si128(sum[1], tmps[1]);
+
+			X[0] = _mm_xor_si128(X[0], paddedblk[0]);
+			state[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+			X[0] = _mm_xor_si128(X[0], paddedblk[1]);
+			state[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+			X[1] = _mm_xor_si128(X[1], paddedblk[0]);
+			state[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+			X[1] = _mm_xor_si128(X[1], paddedblk[1]);
+			state[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+
+			hash[0] = sum[0];
+			hash[1] = sum[1];
+		}
+	}
+}
+
+#define upper_round(dataL, dataR, tmpsL, tmpsR, ctx, htbl, n, i) \
+	{                                                              \
+		rijndael256_roundx4(ctx, 4 * i + 1, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i);                   \
+		rijndael256_roundx4(ctx, 4 * i + 2, tmpsR);                \
+		rijndael256_roundx4(ctx, 4 * i + 3, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i + 1);               \
+		rijndael256_roundx4(ctx, 4 * i + 4, tmpsR);                \
+	}
+
+#define upper_roundx8(dataL, dataR, tmpsL, tmpsR, ctx, htbl, n, i) \
+{                                                              \
+	rijndael256_roundx8(ctx, 4 * i + 1, tmpsR);                \
+	muladd_n2(dataL, htbl, tmpsL, n, 2 * i);                   \
+	rijndael256_roundx8(ctx, 4 * i + 2, tmpsR);                \
+	rijndael256_roundx8(ctx, 4 * i + 3, tmpsR);                \
+	muladd_n2(dataL, htbl, tmpsL, n, 2 * i + 1);               \
+	rijndael256_roundx8(ctx, 4 * i + 4, tmpsR);                \
+}
+
+static inline void upper(aespolyW_context ctx, __m128i *state, const uint8_t *M, size_t Mlen, uint8_t *C, __m128i *hash, __m128i *sum)
+{
+	size_t m = (Mlen + 31) / 32;
+	size_t rem = Mlen + 32 - m * 32;
+	size_t dlen = MAX(m - 1, 0) / 2;
+	size_t dx4rem = dlen % 4;
+	size_t dx4len = dlen / 4;
+
+	alignas(16) __m128i data[32];
+	alignas(16) __m128i tmps[48];
+
+	alignas(16) __m128i omegai[2];
+
+	__m128i *dataL = data;
+	__m128i *dataR = data + 16;
+
+	__m128i *tmpsL = tmps;
+	__m128i *tmpsR = tmps + 16;
+	__m128i *mask = tmps + 32;
+
+	setzero_x16(mask);
+
+	alignas(16) __m128i X[2] = {state[0], state[1]};
+	alignas(16) __m128i Y[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) __m128i Z[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+
+	sum[0] = _mm_setzero_si128();
+	sum[1] = _mm_setzero_si128();
+
+	if (Mlen < 32)
+	{
+		uint8_t padded[32];
+		memset(padded, 0, 32);
+		memcpy(padded, M, Mlen);
+		padded[Mlen] = 0x01;
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)padded));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)padded + 1));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		hash[0] = X[0];
+		hash[1] = X[1];
+		return;
+	}
+
+	copyx2(ctx.omega, omegai);
+
+	for (size_t i = 0; i < dx4len; i++)
+	{
+		gather_load_n2x4((__m128i *)M + 16 * i, dataL);
+		gather_load_n2x4((__m128i *)M + 16 * i + 1, dataR);
+
+		seq_graycode_n2x4(mask, ctx.omega, ctx.omega + 2, omegai, i);
+
+		Y[0] = polyreduce128(ctx.poly, Y[0]);
+		Y[1] = polyreduce128(ctx.poly, Y[1]);
+		Z[0] = _mm_xor_si128(X[0], Y[0]);
+		Z[1] = _mm_xor_si128(X[1], Y[1]);
+
+		Z[0] = _mm_xor_si128(Z[0], data[0]);
+		Z[1] = _mm_xor_si128(Z[1], data[1]);
+
+		xorx8_1wise(dataR, mask, tmpsR);
+		addkey256x4(ctx.rijndael256ctx.keys128, tmpsR, tmpsR);
+
+		rijndael256_roundx4(ctx.rijndael256ctx, 1, tmpsR);
+		mulinit_n2(dataL, ctx.htbl, tmpsL, 8);
+		rijndael256_roundx4(ctx.rijndael256ctx, 2, tmpsR);
+		rijndael256_roundx4(ctx.rijndael256ctx, 3, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 8, 1);
+		rijndael256_roundx4(ctx.rijndael256ctx, 4, tmpsR);
+
+		upper_round(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 1);
+		upper_round(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 2);
+
+		rijndael256_roundx4(ctx.rijndael256ctx, 13, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 8, 6);
+		rijndael256_lastroundx4(ctx.rijndael256ctx, tmpsR);
+		muladdlast_n2(Z, ctx.htbl, tmpsL, 8);
+
+		sum_n2x4(tmpsR, sum);
+
+		tmpsL[3] = _mm_bsrli_si128(tmpsL[2], 8);
+		tmpsL[2] = _mm_bslli_si128(tmpsL[2], 8);
+
+		tmpsL[4 + 3] = _mm_bsrli_si128(tmpsL[4 + 2], 8);
+		tmpsL[4 + 2] = _mm_bslli_si128(tmpsL[4 + 2], 8);
+
+		X[0] = _mm_xor_si128(tmpsL[3], tmpsL[1]);
+		Y[0] = _mm_xor_si128(tmpsL[0], tmpsL[2]);
+
+		X[1] = _mm_xor_si128(tmpsL[4 + 3], tmpsL[4 + 1]);
+		Y[1] = _mm_xor_si128(tmpsL[4 + 0], tmpsL[4 + 2]);
+
+		scatter_store_n2x4((__m128i *)C + 16 * i + 1, tmpsR);
+	}
+	Y[0] = polyreduce128(ctx.poly, Y[0]);
+	Z[0] = _mm_xor_si128(X[0], Y[0]);
+	X[0] = Z[0];
+
+	Y[1] = polyreduce128(ctx.poly, Y[1]);
+	Z[1] = _mm_xor_si128(X[1], Y[1]);
+	X[1] = Z[1];
+
+	for (size_t i = 0; i < dx4rem; i++)
+	{
+		gather_load_n2x1((__m128i *)M + 16 * dx4len + 4 * i + 1, dataL);
+		gather_load_n2x1((__m128i *)M + 16 * dx4len + 4 * i, dataR);
+
+		seq_graycode_n2x1(mask, ctx.omega, dx4len * 4 + i + 2);
+
+		xorx2_1wise(dataR, mask, tmpsR);
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+
+		sum[0] = _mm_xor_si128(sum[0], tmpsR[0]);
+		sum[1] = _mm_xor_si128(sum[1], tmpsR[1]);
+
+		X[0] = _mm_xor_si128(X[0], dataL[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], dataL[1]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], dataL[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], dataL[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+
+		scatter_store_n2x1((__m128i *)C + 16 * dx4len + 4 * i + 1, tmpsR);
+	}
+
+	if (m % 2 == 0)
+	{
+		data[0] = _mm_loadu_si128((__m128i *)(M + Mlen - 32));
+		data[1] = _mm_loadu_si128((__m128i *)(M + Mlen - 32) + 1);
+
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - 32 - rem, rem);
+		padded[rem] = 0x01;
+		alignas(16) __m128i paddedblk[2];
+		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
+		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		seq_graycode_n2x1(mask, ctx.omega, dlen + 2);
+
+		xorx2_1wise(data, mask, tmpsR);
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+
+		sum[0] = _mm_xor_si128(sum[0], tmpsR[0]);
+		sum[1] = _mm_xor_si128(sum[1], tmpsR[1]);
+
+		scatter_store_n2x1((__m128i *)(C + Mlen - 32), tmpsR);
+
+		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], paddedblk[1]);
+		hash[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], paddedblk[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
+		hash[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+	else
+	{
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - rem, rem);
+		padded[rem] = 0x01;
+		alignas(16) __m128i paddedblk[2];
+		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
+		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], paddedblk[1]);
+		hash[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], paddedblk[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
+		hash[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+}
+
+static inline void upperx8(aespolyW_context ctx, __m128i *state, const uint8_t *M, size_t Mlen, uint8_t *C, __m128i *hash, __m128i *sum)
+{
+	size_t m = (Mlen + 31) / 32;
+	size_t rem = Mlen + 32 - m * 32;
+	size_t dlen = MAX(m - 1, 0) / 2;
+	size_t dx8rem = dlen % 8;
+	size_t dx8len = dlen / 8;
+
+	alignas(16) __m128i data[32];
+	alignas(16) __m128i tmps[48];
+
+	alignas(16) __m128i omegai[2];
+
+	__m128i *dataL = data;
+	__m128i *dataR = data + 16;
+
+	__m128i *tmpsL = tmps;
+	__m128i *tmpsR = tmps + 16;
+	__m128i *mask = tmps + 32;
+
+	setzero_x16(mask);
+
+	alignas(16) __m128i X[2] = {state[0], state[1]};
+	alignas(16) __m128i Y[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) __m128i Z[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+
+	sum[0] = _mm_setzero_si128();
+	sum[1] = _mm_setzero_si128();
+
+	if (Mlen < 32)
+	{
+		uint8_t padded[32];
+		memset(padded, 0, 32);
+		memcpy(padded, M, Mlen);
+		padded[Mlen] = 0x01;
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)padded));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)padded + 1));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		hash[0] = X[0];
+		hash[1] = X[1];
+		return;
+	}
+
+	copyx2(ctx.omega, omegai);
+
+	for (size_t i = 0; i < dx8len; i++)
+	{
+		gather_load_n2x8((__m128i *)M + 32 * i, dataL);
+		gather_load_n2x8((__m128i *)M + 32 * i + 1, dataR);
+
+		seq_graycode_n2x8(mask, ctx.omega, ctx.omega + 4, omegai, i);
+
+		Y[0] = polyreduce128(ctx.poly, Y[0]);
+		Y[1] = polyreduce128(ctx.poly, Y[1]);
+		Z[0] = _mm_xor_si128(X[0], Y[0]);
+		Z[1] = _mm_xor_si128(X[1], Y[1]);
+
+		Z[0] = _mm_xor_si128(Z[0], data[0]);
+		Z[1] = _mm_xor_si128(Z[1], data[1]);
+
+		xorx16_1wise(dataR, mask, tmpsR);
+		addkey256x8(ctx.rijndael256ctx.keys128, tmpsR, tmpsR);
+
+		rijndael256_roundx8(ctx.rijndael256ctx, 1, tmpsR);
+		mulinit_n2(dataL, ctx.htbl, tmpsL, 16);
+		rijndael256_roundx8(ctx.rijndael256ctx, 2, tmpsR);
+		rijndael256_roundx8(ctx.rijndael256ctx, 3, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 1);
+		rijndael256_roundx8(ctx.rijndael256ctx, 4, tmpsR);
+
+		upper_roundx8(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 16, 1);
+		upper_roundx8(dataL, dataR, tmpsL, tmpsR, ctx.rijndael256ctx, ctx.htbl, 16, 2);
+
+		rijndael256_roundx8(ctx.rijndael256ctx, 13, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 6);
+		rijndael256_lastroundx8(ctx.rijndael256ctx, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 7);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 8);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 9);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 10);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 11);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 12);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 13);
+		muladd_n2(dataL, ctx.htbl, tmpsL, 16, 14);	
+		
+		muladdlast_n2(Z, ctx.htbl, tmpsL, 16);
+
+		sum_n2x8(tmpsR, sum);
+
+		tmpsL[3] = _mm_bsrli_si128(tmpsL[2], 8);
+		tmpsL[2] = _mm_bslli_si128(tmpsL[2], 8);
+
+		tmpsL[4 + 3] = _mm_bsrli_si128(tmpsL[4 + 2], 8);
+		tmpsL[4 + 2] = _mm_bslli_si128(tmpsL[4 + 2], 8);
+
+		X[0] = _mm_xor_si128(tmpsL[3], tmpsL[1]);
+		Y[0] = _mm_xor_si128(tmpsL[0], tmpsL[2]);
+
+		X[1] = _mm_xor_si128(tmpsL[4 + 3], tmpsL[4 + 1]);
+		Y[1] = _mm_xor_si128(tmpsL[4 + 0], tmpsL[4 + 2]);
+
+		scatter_store_n2x8((__m128i *)C + 32 * i + 1, tmpsR);
+	}
+	Y[0] = polyreduce128(ctx.poly, Y[0]);
+	Z[0] = _mm_xor_si128(X[0], Y[0]);
+	X[0] = Z[0];
+
+	Y[1] = polyreduce128(ctx.poly, Y[1]);
+	Z[1] = _mm_xor_si128(X[1], Y[1]);
+	X[1] = Z[1];
+
+	for (size_t i = 0; i < dx8rem; i++)
+	{
+		gather_load_n2x1((__m128i *)M + 32 * dx8len + 4 * i + 1, dataL);
+		gather_load_n2x1((__m128i *)M + 32 * dx8len + 4 * i, dataR);
+
+		seq_graycode_n2x1(mask, ctx.omega, dx8len * 8 + i + 2);
+
+		xorx2_1wise(dataR, mask, tmpsR);
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+
+		sum[0] = _mm_xor_si128(sum[0], tmpsR[0]);
+		sum[1] = _mm_xor_si128(sum[1], tmpsR[1]);
+
+		X[0] = _mm_xor_si128(X[0], dataL[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], dataL[1]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], dataL[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], dataL[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+
+		scatter_store_n2x1((__m128i *)C + 32 * dx8len + 4 * i + 1, tmpsR);
+	}
+
+	if (m % 2 == 0)
+	{
+		data[0] = _mm_loadu_si128((__m128i *)(M + Mlen - 32));
+		data[1] = _mm_loadu_si128((__m128i *)(M + Mlen - 32) + 1);
+
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - 32 - rem, rem);
+		padded[rem] = 0x01;
+		alignas(16) __m128i paddedblk[2] = {
+		_mm_loadu_si128((__m128i *)padded),
+		_mm_loadu_si128((__m128i *)padded + 1)};
+
+		seq_graycode_n2x1(mask, ctx.omega, dlen + 2);
+
+		xorx2_1wise(data, mask, tmpsR);
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+
+		sum[0] = _mm_xor_si128(sum[0], tmpsR[0]);
+		sum[1] = _mm_xor_si128(sum[1], tmpsR[1]);
+
+		scatter_store_n2x1((__m128i *)(C + Mlen - 32), tmpsR);
+
+		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], paddedblk[1]);
+		hash[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], paddedblk[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
+		hash[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+	else
+	{
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - rem, rem);
+		padded[rem] = 0x01;
+		alignas(16) __m128i paddedblk[2];
+		paddedblk[0] = _mm_loadu_si128((__m128i *)padded);
+		paddedblk[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		X[0] = _mm_xor_si128(X[0], paddedblk[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], paddedblk[1]);
+		hash[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], paddedblk[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], paddedblk[1]);
+		hash[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+	}
+}
+
+#define lower_round(dataL, dataR, tmpsL, tmpsR, ctx, htbl, n, i) \
+	{                                                              \
+		rijndael256_roundx4(ctx, 4 * i + 1, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i);                   \
+		rijndael256_roundx4(ctx, 4 * i + 2, tmpsR);                \
+		rijndael256_roundx4(ctx, 4 * i + 3, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i + 1);               \
+		rijndael256_roundx4(ctx, 4 * i + 4, tmpsR);                \
+	}
+
+#define lower_roundx8(dataL, dataR, tmpsL, tmpsR, ctx, htbl, n, i) \
+	{                                                              \
+		rijndael256_roundx8(ctx, 4 * i + 1, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i);                   \
+		rijndael256_roundx8(ctx, 4 * i + 2, tmpsR);                \
+		rijndael256_roundx8(ctx, 4 * i + 3, tmpsR);                \
+		muladd_n2(dataL, htbl, tmpsL, n, 2 * i + 1);               \
+		rijndael256_roundx8(ctx, 4 * i + 4, tmpsR);                \
+	}
+
+static inline void middlelower(aespolyW_context ctx, __m128i *state, __m128i *S1, __m128i *S2, const uint8_t *M, size_t Mlen, uint8_t *C, __m128i *hash)
+{
+	size_t m = (Mlen + 31) / 32;
+	size_t rem = Mlen + 32 - m * 32;
+	size_t dlen = MAX(m - 1, 0) / 2;
+	size_t dx4rem = dlen % 4;
+	size_t dx4len = dlen / 4;
+
+	alignas(16) __m128i data[32];
+	alignas(16) __m128i tmps[64];
+
+	alignas(16) __m128i omegai[2];
+
+	__m128i *dataL = data;
+	__m128i *dataR = data + 16;
+
+	__m128i *tmpsL = tmps;
+	__m128i *tmpsR = tmps + 16;
+	__m128i *mask = tmps + 32;
+	__m128i *tmpsH = tmps + 48;
+
+	setzero_x16(mask);
+
+	alignas(16) __m128i X[2] = {state[0], state[1]};
+	alignas(16) __m128i Y[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) __m128i Z[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+
+	alignas(16) __m128i ctr[16];
+	alignas(16) __m128i inc4[16];
+	alignas(16) __m128i inc[16];
+
+	for (size_t i = 0; i < 4; i++)
+	{
+		ctr[2 * i] = _mm_setr_epi32(i + 1, 0, 0, 0);
+		ctr[2 * i + 1] = _mm_setzero_si128();
+		inc4[2 * i] = _mm_setr_epi32(4, 0, 0, 0);
+		inc4[2 * i + 1] = _mm_setzero_si128();
+		inc[2 * i] = _mm_setr_epi32(1, 0, 0, 0);
+		inc[2 * i + 1] = _mm_setzero_si128();
+	}
+
+	if (Mlen < 32)
+	{
+		return;
+	}
+
+	copyx2(ctx.omega + 6, omegai);
+
+	for (size_t i = 0; i < dx4len; i++)
+	{
+		gather_load_x4((__m128i *)M + 16 * i, dataL);
+		gather_load_x4((__m128i *)M + 16 * i + 1, dataR);
+
+		seq_graycode_n2x4(mask, ctx.omega, ctx.omega + 2, omegai, i);
+
+		Y[0] = polyreduce128(ctx.poly, Y[0]);
+		Y[1] = polyreduce128(ctx.poly, Y[1]);
+		Z[0] = _mm_xor_si128(X[0], Y[0]);
+		Z[1] = _mm_xor_si128(X[1], Y[1]);
+
+		addkey256x4(S1, ctr, tmpsL);
+		rijndael256x4(ctx.rijndael256ctx, tmpsL, tmpsL);
+		xorx8_1wise(tmpsL, dataL, tmpsL);
+		addkey256x4(S2, tmpsR, tmpsR);
+
+		copyx8(tmpsL, dataL);
+
+		Z[0] = _mm_xor_si128(Z[0], dataL[0]);
+		Z[1] = _mm_xor_si128(Z[1], dataL[1]);
+
+		rijndael256_roundx4(ctx.rijndael256ctx, 1, tmpsR);
+		mulinit_n2(dataL, ctx.htbl, tmpsH, 8);
+		rijndael256_roundx4(ctx.rijndael256ctx, 2, tmpsR);
+		rijndael256_roundx4(ctx.rijndael256ctx, 3, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 8, 1);
+		rijndael256_roundx4(ctx.rijndael256ctx, 4, tmpsR);
+
+		lower_round(dataL, dataR, tmpsH, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 1);
+		lower_round(dataL, dataR, tmpsH, tmpsR, ctx.rijndael256ctx, ctx.htbl, 8, 2);
+
+		rijndael256_roundx4(ctx.rijndael256ctx, 13, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 8, 6);
+		rijndael256_lastroundx4(ctx.rijndael256ctx, tmpsR);
+		muladdlast_n2(Z, ctx.htbl, tmpsH, 8);
+
+		xorx8_1wise(tmpsR, mask, tmpsR);
+
+		tmpsH[3] = _mm_bsrli_si128(tmpsH[2], 8);
+		tmpsH[2] = _mm_bslli_si128(tmpsH[2], 8);
+
+		tmpsH[4 + 3] = _mm_bsrli_si128(tmpsH[4 + 2], 8);
+		tmpsH[4 + 2] = _mm_bslli_si128(tmpsH[4 + 2], 8);
+
+		X[0] = _mm_xor_si128(tmpsH[3], tmpsH[1]);
+		Y[0] = _mm_xor_si128(tmpsH[0], tmpsH[2]);
+
+		X[1] = _mm_xor_si128(tmpsH[4 + 3], tmpsH[4 + 1]);
+		Y[1] = _mm_xor_si128(tmpsH[4 + 0], tmpsH[4 + 2]);
+
+		scatter_store_n2x4((__m128i *)C + 16 * i, dataL);
+		scatter_store_n2x4((__m128i *)C + 16 * i + 1, tmpsR);
+
+		addx8_1wise(inc4, ctr, ctr);
+	}
+	Y[0] = polyreduce128(ctx.poly, Y[0]);
+	Z[0] = _mm_xor_si128(X[0], Y[0]);
+	X[0] = Z[0];
+
+	Y[1] = polyreduce128(ctx.poly, Y[1]);
+	Z[1] = _mm_xor_si128(X[1], Y[1]);
+	X[1] = Z[1];
+
+	for (size_t i = 0; i < dx4rem; i++)
+	{
+		gather_load_n2x1((__m128i *)M + dx4len * 16 + 4 * i, dataL);
+		gather_load_n2x1((__m128i *)M + dx4len * 16 + 4 * i + 1, dataR);
+
+		addkey256(S1, ctr, tmpsL);
+		rijndael256x1(ctx.rijndael256ctx, tmpsL, tmpsL);
+		addkey256(S2, dataR, tmpsR);
+
+		seq_graycode_n2x1(mask, ctx.omega, dx4len * 4 + i + 2);
+
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+		xorx2_1wise(tmpsR, mask, tmpsR);
+
+		scatter_store_n2x1((__m128i *)C + 16 * dx4len + 2 * i, tmpsL);
+		scatter_store_n2x1((__m128i *)C + 16 * dx4len + 2 * i + 1, tmpsR);
+
+		X[0] = _mm_xor_si128(X[0], dataL[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], dataL[1]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], dataL[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], dataL[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[0]);
+
+		addx2_1wise(inc, ctr, ctr);
+	}
+
+	if (m % 2 == 0)
+	{
+		dataR[0] = _mm_loadu_si128((__m128i *)(M + Mlen - 32));
+		dataR[1] = _mm_loadu_si128((__m128i *)(M + Mlen - 32) + 1);
+
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - 32 - rem, rem);
+		padded[rem] = 0x01;
+		dataL[0] = _mm_loadu_si128((__m128i *)padded);
+		dataL[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		seq_graycode_n2x1(mask, ctx.omega, dlen + 2);
+
+		addkey256(S1, ctr, tmpsL);
+		rijndael256x1(ctx.rijndael256ctx, tmpsL, tmpsL);
+		xorx2_1wise(dataL, tmpsL, dataL);
+
+		xorx2_1wise(S2, dataR, tmpsR);
+
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+		xorx2_1wise(mask, tmpsR, dataR);
+
+		_mm_storeu_si128((__m128i *)(C + Mlen - 32), dataR[0]);
+		_mm_storeu_si128((__m128i *)(C + Mlen - 32) + 1, dataR[1]);
+
+		_mm_storeu_si128((__m128i *)padded, dataL[0]);
+		_mm_storeu_si128((__m128i *)padded + 1, dataL[1]);
+		memcpy(C + Mlen - 32 - rem, padded, rem);
+
+		uint8_t hashblk[32];
+		memset(hashblk, 0, 32);
+		memcpy(hashblk, C + Mlen - 32 - rem, rem);
+		hashblk[rem] = 0x01;
+
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+
+		hash[0] = X[0];
+		hash[1] = X[1];
+	}
+	else
+	{
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - rem, rem);
+		padded[rem] = 0x01;
+		dataL[0] = _mm_loadu_si128((__m128i *)padded);
+		dataL[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		addkey256(S1, ctr, tmpsL);
+		rijndael256x1(ctx.rijndael256ctx, tmpsL, tmpsL);
+		xorx2_1wise(dataL, tmpsL, dataL);
+
+		_mm_storeu_si128((__m128i *)padded, tmpsL[0]);
+		_mm_storeu_si128((__m128i *)padded + 1, tmpsL[1]);
+		memcpy(C + Mlen - 32 - rem, padded, rem);
+
+		uint8_t hashblk[32];
+		memset(hashblk, 0, 32);
+		memcpy(hashblk, C + Mlen - 32 - rem, rem);
+		hashblk[rem] = 0x01;
+
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+
+		hash[0] = X[0];
+		hash[1] = X[1];
+	}
+}
+
+
+static inline void middlelowerx8(aespolyW_context ctx, __m128i *state, __m128i *S1, __m128i *S2, const uint8_t *M, size_t Mlen, uint8_t *C, __m128i *hash)
+{
+	size_t m = (Mlen + 31) / 32;
+	size_t rem = Mlen + 32 - m * 32;
+	size_t dlen = MAX(m - 1, 0) / 2;
+	size_t dx8rem = dlen % 8;
+	size_t dx8len = dlen / 8;
+
+	alignas(16) __m128i data[32];
+	alignas(16) __m128i tmps[64];
+
+	alignas(16) __m128i omegai[2];
+
+	__m128i *dataL = data;
+	__m128i *dataR = data + 16;
+
+	__m128i *tmpsL = tmps;
+	__m128i *tmpsR = tmps + 16;
+	__m128i *mask = tmps + 32;
+	__m128i *tmpsH = tmps + 48;
+
+	setzero_x16(mask);
+
+	alignas(16) __m128i X[2] = {state[0], state[1]};
+	alignas(16) __m128i Y[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+	alignas(16) __m128i Z[2] = {_mm_setzero_si128(), _mm_setzero_si128()};
+
+	alignas(16) __m128i ctr[16];
+	alignas(16) __m128i inc8[16];
+	alignas(16) __m128i inc[16];
+
+	for (size_t i = 0; i < 8; i++)
+	{
+		ctr[2 * i] = _mm_setr_epi32(i + 1, 0, 0, 0);
+		ctr[2 * i + 1] = _mm_setzero_si128();
+		inc8[2 * i] = _mm_setr_epi32(8, 0, 0, 0);
+		inc8[2 * i + 1] = _mm_setzero_si128();
+		inc[2 * i] = _mm_setr_epi32(1, 0, 0, 0);
+		inc[2 * i + 1] = _mm_setzero_si128();
+	}
+
+	if (Mlen < 32)
+	{
+		return;
+	}
+
+	copyx2(ctx.omega, omegai);
+
+	for (size_t i = 0; i < dx8len; i++)
+	{
+		gather_load_x8((__m128i *)M + 32 * i, dataL);
+		gather_load_x8((__m128i *)M + 32 * i + 1, dataR);
+
+		seq_graycode_n2x8(mask, ctx.omega, ctx.omega + 4, omegai, i);
+
+		Y[0] = polyreduce128(ctx.poly, Y[0]);
+		Y[1] = polyreduce128(ctx.poly, Y[1]);
+		Z[0] = _mm_xor_si128(X[0], Y[0]);
+		Z[1] = _mm_xor_si128(X[1], Y[1]);
+
+		addkey256x8(S1, ctr, tmpsL);
+		rijndael256x8(ctx.rijndael256ctx, tmpsL, tmpsL);
+		xorx16_1wise(tmpsL, dataL, tmpsL);
+		addkey256x8(S2, tmpsR, tmpsR);
+
+		copyx16(tmpsL, dataL);
+
+		Z[0] = _mm_xor_si128(Z[0], dataL[0]);
+		Z[1] = _mm_xor_si128(Z[1], dataL[1]);
+
+		rijndael256_roundx8(ctx.rijndael256ctx, 1, tmpsR);
+		mulinit_n2(dataL, ctx.htbl, tmpsH, 16);
+		rijndael256_roundx8(ctx.rijndael256ctx, 2, tmpsR);
+		rijndael256_roundx8(ctx.rijndael256ctx, 3, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 1);
+		rijndael256_roundx8(ctx.rijndael256ctx, 4, tmpsR);
+
+		lower_round(dataL, dataR, tmpsH, tmpsR, ctx.rijndael256ctx, ctx.htbl, 16, 1);
+		lower_round(dataL, dataR, tmpsH, tmpsR, ctx.rijndael256ctx, ctx.htbl, 16, 2);
+
+		rijndael256_roundx8(ctx.rijndael256ctx, 13, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 6);
+		rijndael256_lastroundx8(ctx.rijndael256ctx, tmpsR);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 7);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 8);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 9);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 10);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 11);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 12);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 13);
+		muladd_n2(dataL, ctx.htbl, tmpsH, 16, 14);
+		muladdlast_n2(Z, ctx.htbl, tmpsH, 16);
+
+		xorx16_1wise(tmpsR, mask, tmpsR);
+
+		tmpsH[3] = _mm_bsrli_si128(tmpsH[2], 8);
+		tmpsH[2] = _mm_bslli_si128(tmpsH[2], 8);
+
+		tmpsH[4 + 3] = _mm_bsrli_si128(tmpsH[4 + 2], 8);
+		tmpsH[4 + 2] = _mm_bslli_si128(tmpsH[4 + 2], 8);
+
+		X[0] = _mm_xor_si128(tmpsH[3], tmpsH[1]);
+		Y[0] = _mm_xor_si128(tmpsH[0], tmpsH[2]);
+
+		X[1] = _mm_xor_si128(tmpsH[4 + 3], tmpsH[4 + 1]);
+		Y[1] = _mm_xor_si128(tmpsH[4 + 0], tmpsH[4 + 2]);
+
+		scatter_store_n2x8((__m128i *)C + 32 * i, dataL);
+		scatter_store_n2x8((__m128i *)C + 32 * i + 1, tmpsR);
+
+		addx16_1wise(inc8, ctr, ctr);
+	}
+	Y[0] = polyreduce128(ctx.poly, Y[0]);
+	Z[0] = _mm_xor_si128(X[0], Y[0]);
+	X[0] = Z[0];
+
+	Y[1] = polyreduce128(ctx.poly, Y[1]);
+	Z[1] = _mm_xor_si128(X[1], Y[1]);
+	X[1] = Z[1];
+
+	for (size_t i = 0; i < dx8rem; i++)
+	{
+		gather_load_n2x1((__m128i *)M + dx8len * 32 + 4 * i, dataL);
+		gather_load_n2x1((__m128i *)M + dx8len * 32 + 4 * i + 1, dataR);
+
+		addkey256(S1, ctr, tmpsL);
+		rijndael256x1(ctx.rijndael256ctx, tmpsL, tmpsL);
+		addkey256(S2, dataR, tmpsR);
+
+		seq_graycode_n2x1(mask, ctx.omega, dx8len * 8 + i + 2);
+
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+		xorx2_1wise(tmpsR, mask, tmpsR);
+
+		scatter_store_n2x1((__m128i *)C + 32 * dx8len + 2 * i, tmpsL);
+		scatter_store_n2x1((__m128i *)C + 32 * dx8len + 2 * i + 1, tmpsR);
+
+		X[0] = _mm_xor_si128(X[0], dataL[0]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], dataL[1]);
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+
+		X[1] = _mm_xor_si128(X[1], dataL[0]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], dataL[1]);
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+
+		addx2_1wise(inc, ctr, ctr);
+	}
+
+	if (m % 2 == 0)
+	{
+		dataR[0] = _mm_loadu_si128((__m128i *)(M + Mlen - 32));
+		dataR[1] = _mm_loadu_si128((__m128i *)(M + Mlen - 32) + 1);
+
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - 32 - rem, rem);
+		padded[rem] = 0x01;
+		dataL[0] = _mm_loadu_si128((__m128i *)padded);
+		dataL[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		seq_graycode_n2x1(mask, ctx.omega, dlen + 2);
+
+		addkey256(S1, ctr, tmpsL);
+		rijndael256x1(ctx.rijndael256ctx, tmpsL, tmpsL);
+		xorx2_1wise(dataL, tmpsL, dataL);
+
+		xorx2_1wise(S2, dataR, tmpsR);
+
+		rijndael256x1(ctx.rijndael256ctx, tmpsR, tmpsR);
+		xorx2_1wise(mask, tmpsR, dataR);
+
+		_mm_storeu_si128((__m128i *)(C + Mlen - 32), dataR[0]);
+		_mm_storeu_si128((__m128i *)(C + Mlen - 32) + 1, dataR[1]);
+
+		_mm_storeu_si128((__m128i *)padded, dataL[0]);
+		_mm_storeu_si128((__m128i *)padded + 1, dataL[1]);
+		memcpy(C + Mlen - 32 - rem, padded, rem);
+
+		uint8_t hashblk[32];
+		memset(hashblk, 0, 32);
+		memcpy(hashblk, C + Mlen - 32 - rem, rem);
+		hashblk[rem] = 0x01;
+
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+
+		hash[0] = X[0];
+		hash[1] = X[1];
+	}
+	else
+	{
+		uint8_t padded[33];
+		memset(padded, 0, 32);
+		memcpy(padded, M + Mlen - rem, rem);
+		padded[rem] = 0x01;
+		dataL[0] = _mm_loadu_si128((__m128i *)padded);
+		dataL[1] = _mm_loadu_si128((__m128i *)padded + 1);
+
+		addkey256(S1, ctr, tmpsL);
+		rijndael256x1(ctx.rijndael256ctx, tmpsL, tmpsL);
+		xorx2_1wise(dataL, tmpsL, dataL);
+
+		_mm_storeu_si128((__m128i *)padded, tmpsL[0]);
+		_mm_storeu_si128((__m128i *)padded + 1, tmpsL[1]);
+		memcpy(C + Mlen - 32 - rem, padded, rem);
+
+		uint8_t hashblk[32];
+		memset(hashblk, 0, 32);
+		memcpy(hashblk, C + Mlen - 32 - rem, rem);
+		hashblk[rem] = 0x01;
+
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[0] = _mm_xor_si128(X[0], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[0] = polydot128(ctx.poly, X[0], ctx.htbl[0]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+		X[1] = _mm_xor_si128(X[1], _mm_loadu_si128((__m128i *)hashblk + 1));
+		X[1] = polydot128(ctx.poly, X[1], ctx.htbl[16]);
+
+		hash[0] = X[0];
+		hash[1] = X[1];
+	}
+}
+
+
+static inline void init(aespolyW_context *ctx, uint8_t *key)
+{
+	init_rijndael256(&(ctx->rijndael256ctx), key);
+
+	ctx->poly_double = _mm_setr_epi32(0x87, 0, 0, 0);
+	ctx->poly = _mm_setr_epi32(0x1, 0, 0, 0xc2000000);
+	alignas(16) __m128i tmps[4];
+
+	tmps[0] = _mm_setzero_si128();
+	tmps[1] = _mm_setzero_si128();
+	rijndael256x1(ctx->rijndael256ctx, tmps, ctx->L);
+
+	tmps[0] = _mm_setr_epi32(0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff);
+	tmps[1] = _mm_setr_epi32(0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff);
+	rijndael256x1(ctx->rijndael256ctx, tmps, tmps);
+	ctx->omega[0] = tmps[0];
+	ctx->omega[1] = tmps[1];
+	for (size_t i = 1; i < 150; i++)
+	{
+		mul2_xex_256(ctx->L + 2 * i, ctx->L + 2 * (i - 1));
+		mul2_xex_256(ctx->omega + 2 * i, ctx->omega + 2 * (i - 1));
+	}
+
+	init_htbl128(ctx->htbl, ctx->poly, ctx->L);
+}
+
+static inline void init_with_h(aespolyW_context *ctx, uint8_t *key, uint8_t *h)
+{
+	init(ctx, key);
+	init_htbl128(ctx->htbl, ctx->poly, (__m128i *)h);
+}
+
+static inline void encx4(aespolyW_context ctx, uint8_t *T, size_t Tlen, uint8_t *M, size_t Mlen, uint8_t *C)
+{
+	uint8_t *MN = M;
+	uint8_t *MLR = M + 32;
+	uint8_t *CN = C;
+	uint8_t *CLR = C + 32;
+
+	size_t MLRlen = MAX(Mlen - 32, 0);
+
+	alignas(16) __m128i tmps[16];
+
+	bool mln = MLRlen % 32 > 0;
+
+	size_t tr_blocks = ((Tlen + 31) / 32) / 2;
+	size_t Tr_len = tr_blocks * 32;
+	size_t Tl_len = Tlen - Tr_len;
+	tweaker_scalar(ctx, mln, T, Tl_len, tmps);
+	tmps[2] = _mm_setzero_si128();
+	tmps[3] = _mm_setzero_si128();
+	if (Tr_len > 0)
+	{
+		phash(ctx, T + Tl_len, Tr_len, tmps + 2);
+	}
+
+	__m128i *state = tmps;
+	__m128i *phash_res = tmps + 2;
+
+	tmps[4] = _mm_loadu_si128((__m128i *)MN);
+	tmps[5] = _mm_loadu_si128((__m128i *)MN + 1);
+
+	__m128i *mn = tmps + 4;
+	__m128i *n = tmps + 4;
+
+	n[0] = _mm_xor_si128(phash_res[0], mn[0]);
+	n[1] = _mm_xor_si128(phash_res[1], mn[1]);
+
+	__m128i *hash = tmps + 6;
+	__m128i *sum = tmps + 8;
+
+	memcpy(CLR, MLR, MLRlen);
+	upper(ctx, state, MLR, MLRlen, CLR, hash, sum);
+
+	n[0] = _mm_xor_si128(n[0], hash[0]);
+	n[1] = _mm_xor_si128(n[1], hash[1]);
+
+	n[0] = _mm_xor_si128(n[0], sum[0]);
+	n[1] = _mm_xor_si128(n[1], sum[1]);
+
+	rijndael256x1(ctx.rijndael256ctx, n, n);
+
+	__m128i *n_prev = tmps + 12;
+
+	n_prev[0] = n[0];
+	n_prev[1] = n[1];
+
+	middlelower(ctx, state, n, n, CLR, MLRlen, CLR, hash);
+
+	rijndael256x1(ctx.rijndael256ctx, n, n);
+
+	n[0] = _mm_xor_si128(hash[0], n[0]);
+	n[1] = _mm_xor_si128(hash[1], n[1]);
+
+	n[0] = _mm_xor_si128(sum[0], n[0]);
+	n[1] = _mm_xor_si128(sum[1], n[1]);
+
+	n[0] = _mm_xor_si128(phash_res[0], n[0]);
+	n[1] = _mm_xor_si128(phash_res[1], n[1]);
+
+	if ((MLRlen / 32) % 4 > 0)
+	{
+		n[0] = _mm_xor_si128(n_prev[0], n[0]);
+		n[1] = _mm_xor_si128(n_prev[1], n[1]);
+	}
+
+	_mm_storeu_si128((__m128i *)C, n[0]);
+	_mm_storeu_si128((__m128i *)C + 1, n[1]);
+}
+
+static inline void encx8(aespolyW_context ctx, uint8_t *T, size_t Tlen, uint8_t *M, size_t Mlen, uint8_t *C)
+{
+	uint8_t *MN = M;
+	uint8_t *MLR = M + 32;
+	uint8_t *CN = C;
+	uint8_t *CLR = C + 32;
+
+	size_t MLRlen = MAX(Mlen - 32, 0);
+
+	alignas(16) __m128i tmps[16];
+
+	bool mln = MLRlen % 32 > 0;
+
+	size_t tr_blocks = ((Tlen + 31) / 32) / 2;
+	size_t Tr_len = tr_blocks * 32;
+	size_t Tl_len = Tlen - Tr_len;
+	tweaker_scalar(ctx, mln, T, Tl_len, tmps);
+	tmps[2] = _mm_setzero_si128();
+	tmps[3] = _mm_setzero_si128();
+	if (Tr_len > 0)
+	{
+		phash(ctx, T + Tl_len, Tr_len, tmps + 2);
+	}
+
+	__m128i *state = tmps;
+	__m128i *phash_res = tmps + 2;
+
+	tmps[4] = _mm_loadu_si128((__m128i *)MN);
+	tmps[5] = _mm_loadu_si128((__m128i *)MN + 1);
+
+	__m128i *mn = tmps + 4;
+	__m128i *n = tmps + 4;
+
+	n[0] = _mm_xor_si128(phash_res[0], mn[0]);
+	n[1] = _mm_xor_si128(phash_res[1], mn[1]);
+
+	__m128i *hash = tmps + 6;
+	__m128i *sum = tmps + 8;
+
+	memcpy(CLR, MLR, MLRlen);
+	upperx8(ctx, state, MLR, MLRlen, CLR, hash, sum);
+
+	n[0] = _mm_xor_si128(n[0], hash[0]);
+	n[1] = _mm_xor_si128(n[1], hash[1]);
+
+	n[0] = _mm_xor_si128(n[0], sum[0]);
+	n[1] = _mm_xor_si128(n[1], sum[1]);
+
+	rijndael256x1(ctx.rijndael256ctx, n, n);
+
+	__m128i *n_prev = tmps + 12;
+
+	n_prev[0] = n[0];
+	n_prev[1] = n[1];
+
+	middlelowerx8(ctx, state, n, n, CLR, MLRlen, CLR, hash);
+
+	rijndael256x1(ctx.rijndael256ctx, n, n);
+
+	n[0] = _mm_xor_si128(hash[0], n[0]);
+	n[1] = _mm_xor_si128(hash[1], n[1]);
+
+	n[0] = _mm_xor_si128(sum[0], n[0]);
+	n[1] = _mm_xor_si128(sum[1], n[1]);
+
+	n[0] = _mm_xor_si128(phash_res[0], n[0]);
+	n[1] = _mm_xor_si128(phash_res[1], n[1]);
+
+	if ((MLRlen / 32) % 4 > 0)
+	{
+		n[0] = _mm_xor_si128(n_prev[0], n[0]);
+		n[1] = _mm_xor_si128(n_prev[1], n[1]);
+	}
+
+	_mm_storeu_si128((__m128i *)C, n[0]);
+	_mm_storeu_si128((__m128i *)C + 1, n[1]);
+}

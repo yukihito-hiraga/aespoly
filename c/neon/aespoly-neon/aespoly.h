@@ -826,11 +826,15 @@ static inline __m128i middlelowerx8(aespoly_context* ctx, __m128i state, __m128i
 
 	setzero_x4(mask);
 
-	alignas(16) __m128i ctr[4] = {
+	alignas(16) __m128i ctr[8] = {
 		_mm_setr_epi32(1, 0, 0, 0),
 		_mm_setr_epi32(2, 0, 0, 0),
 		_mm_setr_epi32(3, 0, 0, 0),
 		_mm_setr_epi32(4, 0, 0, 0),
+		_mm_setr_epi32(5, 0, 0, 0),
+		_mm_setr_epi32(6, 0, 0, 0),
+		_mm_setr_epi32(7, 0, 0, 0),
+		_mm_setr_epi32(8, 0, 0, 0)
 	};
 	alignas(16) __m128i inc4 = _mm_setr_epi32(4, 0, 0, 0);
 	alignas(16) __m128i inc = _mm_setr_epi32(1, 0, 0, 0);

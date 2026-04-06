@@ -8,19 +8,15 @@ typedef struct _rijndael256_context
 	alignas(16) __m128i mask[2];
 } rijndael256_context;
 
+static inline void init_rijndael256(rijndael256_context *ctx, uint8_t *key);
+
 static inline void rijndael256_fix_128(rijndael256_context ctx, __m128i *pt, __m128i *out)
 {
-	alignas(16) __m128i tmps[6];
-	__m128i *tmp1 = tmps + 2;
+	alignas(16) __m128i tmps[2];
 
 	tmps[0] = _mm_shuffle_epi8(pt[0], ctx.shuffle[0]);
 	tmps[1] = _mm_shuffle_epi8(pt[1], ctx.shuffle[1]);
 
-	// tmp1[0] = _mm_and_si128(tmps[0], ctx.mask[0]);
-	// tmp1[1] = _mm_and_si128(tmps[1], ctx.mask[1]);
-	// tmps[4] = _mm_xor_si128(tmp1[0], tmp1[1]);
-	// out[0] = _mm_xor_si128(tmps[0], tmps[4]);
-	// out[1] = _mm_xor_si128(tmps[1], tmps[4]);
 	out[0] = _mm_blendv_epi8(tmps[0], tmps[1], ctx.mask[0]);
 	out[1] = _mm_blendv_epi8(tmps[1], tmps[0], ctx.mask[0]);
 }
@@ -69,20 +65,20 @@ static inline void rijndael256_128(rijndael256_context ctx, __m128i *pt, __m128i
 	tmps[1] = _mm_aesenc_si128(tmps[1], ctx.keys128[19]);
 
 	rijndael256_fix_128(ctx, tmps, tmps);
-	tmps[0] = _mm_aesenclast_si128(tmps[0], ctx.keys128[20]);
-	tmps[1] = _mm_aesenclast_si128(tmps[1], ctx.keys128[21]);
+	tmps[0] = _mm_aesenc_si128(tmps[0], ctx.keys128[20]);
+	tmps[1] = _mm_aesenc_si128(tmps[1], ctx.keys128[21]);
 
 	rijndael256_fix_128(ctx, tmps, tmps);
-	tmps[0] = _mm_aesenclast_si128(tmps[0], ctx.keys128[22]);
-	tmps[1] = _mm_aesenclast_si128(tmps[1], ctx.keys128[23]);
+	tmps[0] = _mm_aesenc_si128(tmps[0], ctx.keys128[22]);
+	tmps[1] = _mm_aesenc_si128(tmps[1], ctx.keys128[23]);
 
 	rijndael256_fix_128(ctx, tmps, tmps);
-	tmps[0] = _mm_aesenclast_si128(tmps[0], ctx.keys128[24]);
-	tmps[1] = _mm_aesenclast_si128(tmps[1], ctx.keys128[25]);
+	tmps[0] = _mm_aesenc_si128(tmps[0], ctx.keys128[24]);
+	tmps[1] = _mm_aesenc_si128(tmps[1], ctx.keys128[25]);
 
 	rijndael256_fix_128(ctx, tmps, tmps);
-	tmps[0] = _mm_aesenclast_si128(tmps[0], ctx.keys128[26]);
-	tmps[1] = _mm_aesenclast_si128(tmps[1], ctx.keys128[27]);
+	tmps[0] = _mm_aesenc_si128(tmps[0], ctx.keys128[26]);
+	tmps[1] = _mm_aesenc_si128(tmps[1], ctx.keys128[27]);
 
 	rijndael256_fix_128(ctx, tmps, tmps);
 	tmps[0] = _mm_aesenclast_si128(tmps[0], ctx.keys128[28]);
@@ -135,8 +131,8 @@ static inline void rijndael256_ecb(rijndael256_context ctx, uint8_t *P, size_t P
 #define rijndael256_lastround(ctx, tmps)                                \
 	{                                                                   \
 		rijndael256_fix_128(ctx, tmps, tmps);                           \
-		(tmps)[0] = _mm_aesenclast_si128((tmps)[0], (ctx.keys128)[20]); \
-		(tmps)[1] = _mm_aesenclast_si128((tmps)[1], (ctx.keys128)[21]); \
+		(tmps)[0] = _mm_aesenclast_si128((tmps)[0], (ctx.keys128)[28]); \
+		(tmps)[1] = _mm_aesenclast_si128((tmps)[1], (ctx.keys128)[29]); \
 	}
 
 #define rijndael256_roundx2(ctx, i, tmps)    \
@@ -405,7 +401,62 @@ static inline void rijndael256xctrx4(rijndael256_context ctx, __m128i *S, uint8_
 	}
 }
 
-void init_rijndael256(rijndael256_context* ctx, uint8_t*key){
-	ctx->keys128[0] = _mm_loadu_si128((__m128i*)key);
-	ctx->keys128[1] = _mm_loadu_si128((__m128i*)key+1);
+#define rijndael256_expand_assist1(lo, hi, rcon_imm)                                      \
+	do                                                                                     \
+	{                                                                                      \
+		__m128i _tmp = _mm_aeskeygenassist_si128((hi), rcon_imm);                          \
+		_tmp = _mm_shuffle_epi32(_tmp, 0xff);                                              \
+		(lo) = _mm_xor_si128((lo), _mm_slli_si128((lo), 4));                               \
+		(lo) = _mm_xor_si128((lo), _mm_slli_si128((lo), 4));                               \
+		(lo) = _mm_xor_si128((lo), _mm_slli_si128((lo), 4));                               \
+		(lo) = _mm_xor_si128((lo), _tmp);                                                  \
+	} while (0)
+
+#define rijndael256_expand_assist2(lo, hi)                                                \
+	do                                                                                     \
+	{                                                                                      \
+		__m128i _tmp = _mm_aeskeygenassist_si128((lo), 0x00);                              \
+		_tmp = _mm_shuffle_epi32(_tmp, 0xaa);                                              \
+		(hi) = _mm_xor_si128((hi), _mm_slli_si128((hi), 4));                               \
+		(hi) = _mm_xor_si128((hi), _mm_slli_si128((hi), 4));                               \
+		(hi) = _mm_xor_si128((hi), _mm_slli_si128((hi), 4));                               \
+		(hi) = _mm_xor_si128((hi), _tmp);                                                  \
+	} while (0)
+
+#define rijndael256_expand_pair(ctx, idx, lo, hi, rcon_imm)                               \
+	do                                                                                     \
+	{                                                                                      \
+		rijndael256_expand_assist1((lo), (hi), rcon_imm);                                  \
+		(ctx)->keys128[2 * (idx)] = (lo);                                                  \
+		rijndael256_expand_assist2((lo), (hi));                                            \
+		(ctx)->keys128[2 * (idx) + 1] = (hi);                                              \
+	} while (0)
+
+static inline void init_rijndael256(rijndael256_context *ctx, uint8_t *key)
+{
+	__m128i lo = _mm_loadu_si128((__m128i *)(key + 0));
+	__m128i hi = _mm_loadu_si128((__m128i *)(key + 16));
+
+	ctx->keys128[0] = lo;
+	ctx->keys128[1] = hi;
+	rijndael256_expand_pair(ctx, 1, lo, hi, 0x01);
+	rijndael256_expand_pair(ctx, 2, lo, hi, 0x02);
+	rijndael256_expand_pair(ctx, 3, lo, hi, 0x04);
+	rijndael256_expand_pair(ctx, 4, lo, hi, 0x08);
+	rijndael256_expand_pair(ctx, 5, lo, hi, 0x10);
+	rijndael256_expand_pair(ctx, 6, lo, hi, 0x20);
+	rijndael256_expand_pair(ctx, 7, lo, hi, 0x40);
+	rijndael256_expand_pair(ctx, 8, lo, hi, 0x80);
+	rijndael256_expand_pair(ctx, 9, lo, hi, 0x1B);
+	rijndael256_expand_pair(ctx, 10, lo, hi, 0x36);
+	rijndael256_expand_pair(ctx, 11, lo, hi, 0x6C);
+	rijndael256_expand_pair(ctx, 12, lo, hi, 0xD8);
+	rijndael256_expand_pair(ctx, 13, lo, hi, 0xAB);
+	rijndael256_expand_pair(ctx, 14, lo, hi, 0x4D);
+
+	ctx->shuffle[0] = _mm_setr_epi8(0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13, 2, 3);
+	ctx->shuffle[1] = ctx->shuffle[0];
+	ctx->mask[0] = _mm_setr_epi8(0x00, (char)0x80, (char)0x80, (char)0x80, 0x00, 0x00, (char)0x80, (char)0x80,
+	                             0x00, 0x00, 0x00, (char)0x80, 0x00, 0x00, (char)0x80, (char)0x80);
+	ctx->mask[1] = ctx->mask[0];
 }

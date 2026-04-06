@@ -1,6 +1,8 @@
-project('test_project', 'c', default_options : ['warning_level=0', 'werror=true', 'cpp_std=c11', 'optimization=3'], meson_version : '>=1.3.0')
+project('test_project', 'c', 'cpp', default_options : ['warning_level=0', 'werror=true', 'c_std=c11', 'cpp_std=c++20', 'optimization=3'], meson_version : '>=1.3.0')
 
 glib = dependency('glib-2.0', version: '>=2.56') 
+json = dependency('nlohmann_json')
+gtest = dependency('gtest')
 
 args = [
 	'-Wno-unused-function',
@@ -48,18 +50,32 @@ if arch == 'aarch64'
 	bench_aesgcm = executable('aesgcm', ['c/neon/aesgcm-neon/bench.c'], c_args:args, dependencies: glib)
 	bench_ocb = executable('ocb', ['c/neon/ocb-neon/bench.c'], c_args:args, dependencies: glib)
 
-	bench_aespolyW_aes128 = executable('aespoly', ['c/neon/aespoly-neon/bench.c'], c_args:args, dependencies: glib)
-	bench_aespolyW_rijndael256 = executable('aespoly-rijndael256', ['c/neon/aespoly-rijndael256-neon/bench.c'], c_args:args, dependencies: glib)
-	bench_aespolyW_simpira = executable('aespoly-simpira', ['c/neon/aespoly-simpira-neon/bench.c'], c_args:args, dependencies: glib)
-	bench_aespolyM = executable('ecbpoly-neon', ['c/neon/ecbpoly-neon/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyW_aes128 = executable('aespolyW', ['c/neon/aespolyW-neon/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyW_rijndael256 = executable('aespolyW-rijndael256', ['c/neon/aespolyW-rijndael256-neon/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyW_simpira = executable('aespolyW-simpira', ['c/neon/aespolyW-simpira-neon/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyM = executable('aespolyM-neon', ['c/neon/aespolyM-neon/bench.c'], c_args:args, dependencies: glib)
 	
-	bench_pmac = executable('pmac', ['c/neon/pmac-neon/bench.c'], c_args:args, dependencies: glib)
-	bench_gmac = executable('gmac', ['c/neon/gmac-neon/bench.c'], c_args:args, dependencies: glib)
-	
-	bench_eme_aes128 = executable('eme', ['c/neon/eme-neon/bench.c'], c_args:args, dependencies: glib)
-	bench_eme_rijndael256 = executable('eme-rijndael256', ['c/neon/eme-rijndael256-neon/bench.c'], c_args:args, dependencies: glib)
-	bench_eme_simpira = executable('eme-simpira', ['c/neon/eme-simpira-neon/bench.c'], c_args:args, dependencies: glib)
-	
+		bench_pmac = executable('pmac', ['c/neon/pmac-neon/bench.c'], c_args:args, dependencies: glib)
+		bench_gmac = executable('gmac', ['c/neon/gmac-neon/bench.c'], c_args:args, dependencies: glib)
+		
+		bench_eme_aes128 = executable('eme', ['c/neon/eme-neon/bench.c'], c_args:args, dependencies: glib)
+		bench_eme_rijndael256 = executable('eme-rijndael256', ['c/neon/eme-rijndael256-neon/bench.c'], c_args:args, dependencies: glib)
+		bench_eme_simpira = executable('eme-simpira', ['c/neon/eme-simpira-neon/bench.c'], c_args:args, dependencies: glib)
+		test_gmac = executable('test_gmac', ['c/neon/gmac-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_pmac = executable('test_pmac', ['c/neon/pmac-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_aesgcm = executable('test_aesgcm', ['c/neon/aesgcm-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_ocb = executable('test_ocb', ['c/neon/ocb-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_aespolyW_aes128 = executable('test_aespolyW_aes128', ['c/neon/aespolyW-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_aespolyW_rijndael256 = executable('test_aespolyW_rijndael256', ['c/neon/aespolyW-rijndael256-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_aespolyW_simpira = executable('test_aespolyW_simpira', ['c/neon/aespolyW-simpira-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_aespolyM = executable('test_aespolyM', ['c/neon/aespolyM-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_hctr2_aes128 = executable('test_hctr2_aes128', ['c/neon/hctr2-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_hctr2_rijndael256 = executable('test_hctr2_rijndael256', ['c/neon/hctr2-rijndael256-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_hctr2_simpira = executable('test_hctr2_simpira', ['c/neon/hctr2-simpira-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_eme_aes128 = executable('test_eme_aes128', ['c/neon/eme-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_eme_rijndael256 = executable('test_eme_rijndael256', ['c/neon/eme-rijndael256-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		test_eme_simpira = executable('test_eme_simpira', ['c/neon/eme-simpira-neon/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+		
 elif arch == 'x86_64'
 	args += '-march=native'
 
@@ -76,8 +92,11 @@ elif arch == 'x86_64'
 		if c.links(testcode_avx512, args: ['-O3', '-march=native'], name: 'AVX-512 compile+link')
 			avx512_supported = true
 			bench_hctr2_aes128_avx512 = executable('hctr2-avx512', ['c/avx/hctr2-avx512/bench.c'], c_args:args, dependencies: glib)
-			bench_aespoly_aes128_avx512 = executable('aespoly-avx512', ['c/avx/aespoly-avx512/bench.c'], c_args:args, dependencies: glib)
+			bench_aespolyW_aes128_avx512 = executable('aespolyW-avx512', ['c/avx/aespolyW-avx512/bench.c'], c_args:args, dependencies: glib)
 			bench_eme_aes128_avx512 = executable('eme-avx512', ['c/avx/eme-avx512/bench.c'], c_args:args, dependencies: glib)
+			test_hctr2_aes128_avx512 = executable('test_hctr2_aes128_avx512', ['c/avx/hctr2-avx512/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+			test_aespolyW_aes128_avx512 = executable('test_aespolyW_aes128_avx512', ['c/avx/aespolyW-avx512/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+			test_eme_aes128_avx512 = executable('test_eme_aes128_avx512', ['c/avx/eme-avx512/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
 		endif
 	endif
 
@@ -90,10 +109,10 @@ elif arch == 'x86_64'
 	bench_aesgcm = executable('aesgcm', ['c/avx/aesgcm-avx/bench.c'], c_args:args, dependencies: glib)
 	bench_ocb = executable('ocb', ['c/avx/ocb-avx/bench.c'], c_args:args, dependencies: glib)
 
-	bench_aespolyW_aes128 = executable('aespoly-aes128', ['c/avx/aespoly-avx/bench.c'], c_args:args, dependencies: glib)
-	bench_aespolyW_rijndael256 = executable('aespoly-rijndael256', ['c/avx/aespoly-rijndael256-avx/bench.c'], c_args:args, dependencies: glib)
-	bench_aespolyW_simpira = executable('aespoly-simpira', ['c/avx/aespoly-simpira-avx/bench.c'], c_args:args, dependencies: glib)
-	bench_aespolyM = executable('ecbpoly', ['c/avx/ecbpoly-avx/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyW_aes128 = executable('aespolyW-aes128', ['c/avx/aespolyW-avx/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyW_rijndael256 = executable('aespolyW-rijndael256', ['c/avx/aespolyW-rijndael256-avx/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyW_simpira = executable('aespolyW-simpira', ['c/avx/aespolyW-simpira-avx/bench.c'], c_args:args, dependencies: glib)
+	bench_aespolyM = executable('aespolyM', ['c/avx/aespolyM-avx/bench.c'], c_args:args, dependencies: glib)
 	
 	bench_pmac = executable('pmac-avx', ['c/avx/pmac-avx/bench.c'], c_args:args, dependencies: glib)
 	bench_gmac = executable('gmac-avx', ['c/avx/gmac-avx/bench.c'], c_args:args, dependencies: glib)
@@ -101,6 +120,21 @@ elif arch == 'x86_64'
 	bench_eme_aes128 = executable('eme-aes128', ['c/avx/eme-avx/bench.c'], c_args:args, dependencies: glib)
 	bench_eme_rijndael256 = executable('eme-rijndael256', ['c/avx/eme-rijndael256-avx/bench.c'], c_args:args, dependencies: glib)
 	bench_eme_simpira = executable('eme-simpira', ['c/avx/eme-simpira-avx/bench.c'], c_args:args, dependencies: glib)
+
+	test_gmac = executable('test_gmac', ['c/avx/gmac-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_pmac = executable('test_pmac', ['c/avx/pmac-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_aesgcm = executable('test_aesgcm', ['c/avx/aesgcm-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_ocb = executable('test_ocb', ['c/avx/ocb-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_aespolyW_aes128 = executable('test_aespolyW_aes128', ['c/avx/aespolyW-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_aespolyW_rijndael256 = executable('test_aespolyW_rijndael256', ['c/avx/aespolyW-rijndael256-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_aespolyW_simpira = executable('test_aespolyW_simpira', ['c/avx/aespolyW-simpira-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_aespolyM = executable('test_aespolyM', ['c/avx/aespolyM-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_hctr2_aes128 = executable('test_hctr2_aes128', ['c/avx/hctr2-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_hctr2_rijndael256 = executable('test_hctr2_rijndael256', ['c/avx/hctr2-rijndael256-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_hctr2_simpira = executable('test_hctr2_simpira', ['c/avx/hctr2-simpira-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_eme_aes128 = executable('test_eme_aes128', ['c/avx/eme-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_eme_rijndael256 = executable('test_eme_rijndael256', ['c/avx/eme-rijndael256-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
+	test_eme_simpira = executable('test_eme_simpira', ['c/avx/eme-simpira-avx/test.cpp'], cpp_args: args, dependencies: [json, gtest, glib])
 endif
 
 cd.set('avx512', avx512_supported)

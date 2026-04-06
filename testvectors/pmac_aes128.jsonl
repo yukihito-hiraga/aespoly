@@ -1,0 +1,2 @@
+{"scheme": "pmac_aes128", "inputs": {"pt": "cee48d0bb2a2c7942fc313ec4297fd905f0c2023bd3aa460f305b225345956be93f3be492a942fee2150c80142db42e210a2", "key": "6dbb43125d94d561adcf8fb14f030e30"}, "expected": {"tag": "b03ab1e092688a4eae03e742aae8d724"}}
+{"scheme": "gmac_aes128", "inputs": {"key": "000102030405060708090a0b0c0d0e0f", "pt": ""}, "expected": {"tag": "4399572cd6ea5341b8d35876a7098af7"}}

@@ -112,8 +112,8 @@ static inline uint8x16_t aesdec128(uint8x16_t ct, uint8x16_t *keys)
 static inline uint8x16_t aeskeyex128(uint8x16_t key, uint8_t rcon)
 {
 	alignas(16) uint8x16_t tmp;
-	alignas(16) uint8x16_t rcon_v;
-	rcon_v = vld1q_u8(&rcon);
+	alignas(16) uint8x16_t rcon_v = vdupq_n_u8(0);
+	rcon_v = vsetq_lane_u8(rcon, rcon_v, 12);
 	tmp = veorq_u8(rcon_v, subrotword(key));
 	tmp = shiftadd(key, tmp);
 	return tmp;

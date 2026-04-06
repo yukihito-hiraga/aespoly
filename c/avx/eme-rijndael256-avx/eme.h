@@ -104,7 +104,7 @@ static inline void xe_x4(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	for (size_t i = 0; i < bx4len; i++)
 	{
 		loadx8((__m128i *)P + 8 * i, data);
-		xorx8_1wise(L + 2 + 8 * i, data, tmps);
+		xorx8_1wise(L + 8 * i, data, tmps);
 		rijndael256x4(ctx.rijndael256ctx, tmps, tmps);
 		storex8((__m128i *)C + 8 * i, tmps);
 		sum_n2x4(tmps, sum);
@@ -113,7 +113,7 @@ static inline void xe_x4(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	for (size_t i = 0; i < bx4rem; i++)
 	{
 		loadx2((__m128i *)P + bx4len * 8 + 2 * i, data);
-		xorx2_1wise(L + 2 + 8 * bx4len + 2 * i, data, tmps);
+		xorx2_1wise(L + 8 * bx4len + 2 * i, data, tmps);
 		rijndael256_128(ctx.rijndael256ctx, tmps, tmps);
 		storex2((__m128i *)C + bx4len * 8 + 2 * i, tmps);
 		sum[0] = _mm_xor_si128(sum[0], tmps[0]);
@@ -136,7 +136,7 @@ static inline void xe_x8(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	for (size_t i = 0; i < bx8len; i++)
 	{
 		loadx16((__m128i *)P + 16 * i, data);
-		xorx16_1wise(L + 2 + 16 * i, data, tmps);
+		xorx16_1wise(L + 16 * i, data, tmps);
 		rijndael256x8(ctx.rijndael256ctx, tmps, tmps);
 		storex8((__m128i *)C + 16 * i, tmps);
 		sum_n2x8(tmps, sum);
@@ -145,7 +145,7 @@ static inline void xe_x8(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	for (size_t i = 0; i < bx8rem; i++)
 	{
 		loadx2((__m128i *)P + bx8len * 16 + 2 * i, data);
-		xorx2_1wise(L + 2 + 16 * bx8len + 2 * i, data, tmps);
+		xorx2_1wise(L + 16 * bx8len + 2 * i, data, tmps);
 		rijndael256_128(ctx.rijndael256ctx, tmps, tmps);
 		storex2((__m128i *)C + bx8len * 16 + 2 * i, tmps);
 		sum[0] = _mm_xor_si128(sum[0], tmps[0]);
@@ -171,10 +171,10 @@ static inline void middle_x4(eme_context ctx, __m128i* M, const uint8_t *P, size
 	mask[4] = mul2(ctx.pp[0], mask[2]);
 	mask[6] = mul2(ctx.pp[0], mask[4]);
 
-	mask[1] = mul2(ctx.pp[0], M[1]);
-	mask[3] = mul2(ctx.pp[0], mask[1]);
-	mask[5] = mul2(ctx.pp[0], mask[3]);
-	mask[7] = mul2(ctx.pp[0], mask[5]);
+	mask[1] = mul2(ctx.pp[1], M[1]);
+	mask[3] = mul2(ctx.pp[1], mask[1]);
+	mask[5] = mul2(ctx.pp[1], mask[3]);
+	mask[7] = mul2(ctx.pp[1], mask[5]);
 
 	for (size_t i = 0; i < bx4len; i++)
 	{
@@ -221,11 +221,11 @@ static inline void middle_x8(eme_context ctx, __m128i* M, const uint8_t *P, size
 	sum[1] = _mm_setzero_si128();
 
 	mask[0] = mul2(ctx.pp[0], M[0]);
-	mask[1] = mul2(ctx.pp[0], M[1]);
+	mask[1] = mul2(ctx.pp[1], M[1]);
 	for (size_t i = 1; i < 8; i++)
 	{
 		mask[2*i] = mul2(ctx.pp[0], mask[(i-1)*2]);	
-		mask[2*i+1] = mul2(ctx.pp[0], mask[(i-1)*2+1]);
+		mask[2*i+1] = mul2(ctx.pp[1], mask[(i-1)*2+1]);
 	}
 
 	for (size_t i = 0; i < bx8len; i++)
@@ -289,7 +289,7 @@ static inline void ex_x4(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	{
 		loadx8((__m128i *)P + 8 * i, data);
 		rijndael256x4(ctx.rijndael256ctx, data, tmps);
-		xorx8_1wise(L + 2 + 8 * i, tmps, tmps);
+		xorx8_1wise(L + 8 * i, tmps, tmps);
 		storex8((__m128i *)C + 8 * i, tmps);
 	}
 
@@ -297,7 +297,7 @@ static inline void ex_x4(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	{
 		loadx2((__m128i *)P + bx4len * 8 + 2 * i, data);
 		rijndael256_128(ctx.rijndael256ctx, data, tmps);
-		xorx2_1wise(L + 2 + 8 * bx4len + 2 * i, tmps, tmps);
+		xorx2_1wise(L + 8 * bx4len + 2 * i, tmps, tmps);
 		storex2((__m128i *)C + bx4len * 8 + 2 * i, tmps);
 	}
 }
@@ -316,7 +316,7 @@ static inline void ex_x8(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	{
 		loadx16((__m128i *)P + 16 * i, data);
 		rijndael256x8(ctx.rijndael256ctx, data, tmps);
-		xorx16_1wise(L + 2 + 16 * i, tmps, tmps);
+		xorx16_1wise(L + 16 * i, tmps, tmps);
 		storex16((__m128i *)C + 16 * i, tmps);
 	}
 
@@ -324,7 +324,7 @@ static inline void ex_x8(eme_context ctx, const uint8_t *P, size_t Plen, uint8_t
 	{
 		loadx2((__m128i *)P + bx8len * 16 + 2 * i, data);
 		rijndael256_128(ctx.rijndael256ctx, data, tmps);
-		xorx2_1wise(L + 2 + 16 * bx8len + 2 * i, tmps, tmps);
+		xorx2_1wise(L + 16 * bx8len + 2 * i, tmps, tmps);
 		storex2((__m128i *)C + bx8len * 16 + 2 * i, tmps);
 	}
 }
